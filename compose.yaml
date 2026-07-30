@@ -1,0 +1,92 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Optional: Enable GPU (uncomment if you have NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+      - IS_PERSISTENT=TRUE
+    restart: unless-stopped
+
+  # ==================== CHROMA ADMIN UI ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: vectoradmin
+      POSTGRES_PASSWORD: vectoradmin123      # Change this to something strong
+      POSTGRES_DB: vdbms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ==================== VECTORADMIN ====================
+  vectoradmin:
+    image: mintplexlabs/vectoradmin:latest
+    container_name: vectoradmin
+    ports:
+      - "3002:3000"                     # Access UI at http://localhost:3002
+    environment:
+      - DATABASE_CONNECTION_STRING=postgresql://vectoradmin:vectoradmin123@postgres:5432/vdbms
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-2026
+      - INNGEST_SIGNING_KEY=your-inngest-signing-key-change-this
+      - INNGEST_EVENT_KEY=background_workers
+      # Optional: Login protection
+      # - SYS_EMAIL=admin@local.com
+      # - SYS_PASSWORD=admin123
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - chromadb
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning --requirepass your_strong_password
+    restart: unless-stopped
+
+  # Optional but Highly Recommended: RedisInsight (GUI for Redis)
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    ports:
+      - "5540:5540"               # Access at http://localhost:5540
+    volumes:
+      - redisinsight_data:/data
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+volumes:
+  ollama_data:
+  chroma_data:
+  redis_data:
+  redisinsight_data:
+  postgres_data:

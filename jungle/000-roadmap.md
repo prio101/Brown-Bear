@@ -10,7 +10,7 @@
 
 Turn Brown Bear from an infrastructure-only stack (`compose.yaml`) into a running Python application that monitors, meters, exposes, and maintains the local AI stack.
 
-**Current state:** 7 containers running. Phase 0 complete, Phase 1 partially complete.
+**Current state:** 7 containers running. Phase 0 complete, Phase 1 complete except M8.
 
 ---
 
@@ -19,18 +19,26 @@ Turn Brown Bear from an infrastructure-only stack (`compose.yaml`) into a runnin
 **Milestone 0 — met.** `docker compose up -d` starts the `app` container; `GET /api/health`
 reports live status for Ollama, ChromaDB, Redis and PostgreSQL.
 
-**Milestone 1 — partially met.** An Ollama call through the proxy produces a `token_events`
-row with correct counts and cost. The period rollup half (M5, M6) is not built, so the
-"after an hour, a matching `token_periods` row exists" half of the milestone does not hold yet.
+**Milestone 1 — met.** An Ollama call through the proxy produces a `token_events` row with
+correct counts and cost, and the closed window it belongs to produces a matching
+`token_periods` row.
 
 | Done | Remaining in Phase 1 |
 |---|---|
-| F1–F6, F8, F9 | — |
-| M1, M2, M3, M4 | M5, M6 (aggregation), M7 (read endpoints), M8 (remote webhook + SDK) |
+| F1–F9 | — |
+| M1–M7 | M8 (remote webhook + provider SDK wrappers) |
 
 Verified against the running stack: token counts match Ollama's own `prompt_eval_count` /
 `eval_count`; `gpt-4` at 1000 in / 500 out prices to exactly $0.06; a replayed `request_id`
-is rejected as a duplicate; local models record at cost 0.
+is rejected as a duplicate; local models record at cost 0. Aggregating the same window three
+times leaves the totals unchanged; daily, weekly and monthly rollups each hold back the
+window still in progress; the four read endpoints return correct filtered and grouped data.
+
+**Open gap feeding into M8.** Catch-up advances a cursor forward, so an event written with a
+timestamp older than the newest completed run never gets an hourly or daily bucket. Proxied
+calls are always current so this is invisible today, but the remote webhook accepts reported
+usage with arbitrary timestamps — M8 has to invalidate and re-run affected windows, not just
+insert the event.
 
 ```bash
 docker compose up -d                    # whole stack incl. the app on :8080

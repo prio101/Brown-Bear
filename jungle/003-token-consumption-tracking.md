@@ -82,12 +82,25 @@ once they have migrated.
 - [x] Alembic migrations (`0001_token_schema`)
 
 ### 3.4 — Aggregation Engine
-- [ ] Background scheduler that runs aggregation jobs:
-  - Hourly aggregation: runs every hour, aggregates last hour's events
-  - Daily aggregation: runs at midnight, aggregates previous day
-  - Weekly/Monthly: rolls up from daily summaries
-- [ ] Idempotent aggregation (safe to re-run without duplicates)
-- [ ] Aggregation progress tracking (last_run, status)
+- [x] Background scheduler that runs aggregation jobs:
+  - Hourly aggregation: runs at :05, aggregates closed hours
+  - Daily aggregation: runs at 00:15, aggregates the previous day
+  - Weekly/Monthly: roll up from daily summaries (00:30 Mon / 00:45 on the 1st)
+- [x] Idempotent aggregation (safe to re-run without duplicates) — upsert on the
+      `token_periods` unique key, and stale `(model, source)` rows are removed on re-run
+- [x] Aggregation progress tracking — `aggregation_runs` keeps run history, not just
+      a last_run column, so "did that window run, and when" stays answerable
+
+Two rules worth carrying into later work:
+- **Only closed windows are aggregated.** The in-flight bucket is served live from raw
+  events by `/api/tokens/summary` instead.
+- **Jobs are self-healing.** The scheduler fills forward from the newest completed run
+  rather than assuming "the last hour", so downtime needs no manual backfill.
+
+> **Known gap for 3.2:** catch-up moves forward from a cursor, so an event written with a
+> timestamp *older* than the newest completed run gets no hourly/daily bucket. Proxied
+> calls are always current, but the remote webhook can report backdated usage — it needs
+> to invalidate and re-run the affected windows.
 
 ### 3.5 — Cost Calculation
 - [x] Model pricing configuration (loaded from DB, seeded by the baseline migration)
@@ -98,10 +111,12 @@ once they have migrated.
 - [ ] Alert when budget threshold exceeded (webhook, log, dashboard notification)
 
 ### 3.6 — API Endpoints
-- [ ] `GET /api/tokens/summary` — current period summary (tokens + cost)
-- [ ] `GET /api/tokens/history` — historical data with period granularity
-- [ ] `GET /api/tokens/by-model` — breakdown by model
-- [ ] `GET /api/tokens/by-source` — local vs remote comparison
+- [x] `GET /api/tokens/summary` — current period, read live from raw events
+- [x] `GET /api/tokens/history` — historical data with period granularity
+- [x] `GET /api/tokens/by-model` — breakdown by model
+- [x] `GET /api/tokens/by-source` — local vs remote comparison
+- [x] `GET /api/tokens/aggregation` + `POST /api/tokens/aggregate` — run visibility and
+      manual catch-up (not in the original spec; needed to operate 3.4)
 - [ ] `POST /api/tokens/config` — update pricing / budget settings
 - [ ] `GET /api/tokens/budget` — current budget status vs threshold
 

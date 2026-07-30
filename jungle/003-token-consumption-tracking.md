@@ -45,10 +45,13 @@ Implement a precise token consumption tracking system that calculates, records, 
 ## Subtasks
 
 ### 3.1 — Token Tracking Middleware
-- [ ] Create `jungle/tracker/` module
-- [ ] FastAPI middleware that intercepts Ollama API calls
-- [ ] Extract token counts from Ollama response (`prompt_eval_count`, `eval_count`)
-- [ ] Log each request to `token_events` table with:
+Implemented as a proxy (`/ollama/*`) rather than middleware — see roadmap M3.
+Clients must call the app instead of Ollama directly; close Ollama's host port
+once they have migrated.
+- [x] Create tracker module (`brownbear/tracking.py`, `brownbear/routers/ollama_proxy.py`)
+- [x] Intercept Ollama API calls
+- [x] Extract token counts from Ollama response (`prompt_eval_count`, `eval_count`)
+- [x] Log each request to `token_events` table with:
   - `model`, `tokens_in`, `tokens_out`, `total_tokens`
   - `source` (local_ollama | remote_api)
   - `session_id`, `user_id` (if applicable)
@@ -62,20 +65,21 @@ Implement a precise token consumption tracking system that calculates, records, 
 - [ ] Validate and deduplicate reported events
 
 ### 3.3 — Database Schema
-- [ ] `token_events` table (raw events):
+- [x] `token_events` table (raw events):
   - `id`, `model`, `tokens_in`, `tokens_out`, `total_tokens`
   - `source`, `session_id`, `user_id`, `request_id`
   - `cost_usd`, `currency`, `timestamp`
-- [ ] `token_periods` table (aggregated):
+- [x] `token_periods` table (aggregated), unique on
+      `(period_type, period_start, model, source)` so aggregation is idempotent:
   - `id`, `period_type` (hourly|daily|weekly|monthly)
   - `period_start`, `period_end`
   - `model`, `source`
   - `total_tokens_in`, `total_tokens_out`, `total_tokens`
   - `total_cost_usd`, `request_count`
-- [ ] `model_pricing` table:
+- [x] `model_pricing` table:
   - `model_name`, `input_cost_per_1k`, `output_cost_per_1k`, `currency`
   - `effective_date`, `is_active`
-- [ ] Alembic migrations
+- [x] Alembic migrations (`0001_token_schema`)
 
 ### 3.4 — Aggregation Engine
 - [ ] Background scheduler that runs aggregation jobs:
@@ -86,9 +90,10 @@ Implement a precise token consumption tracking system that calculates, records, 
 - [ ] Aggregation progress tracking (last_run, status)
 
 ### 3.5 — Cost Calculation
-- [ ] Model pricing configuration (loaded from DB or YAML config)
-- [ ] Auto-calculate cost per event using `tokens_in * input_rate + tokens_out * output_rate`
-- [ ] Support free/local models (cost = 0)
+- [x] Model pricing configuration (loaded from DB, seeded by the baseline migration)
+- [x] Auto-calculate cost per event using `tokens_in * input_rate + tokens_out * output_rate`,
+      resolved at write time — rates change, what a call cost does not
+- [x] Support free/local models (cost = 0) via a `*` fallback pricing row
 - [ ] Budget threshold configuration per user/session/model
 - [ ] Alert when budget threshold exceeded (webhook, log, dashboard notification)
 

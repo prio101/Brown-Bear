@@ -44,10 +44,12 @@ Build a Python FastAPI application that serves as a real-time dashboard and anal
 ## Subtasks
 
 ### 1.1 — Project Scaffolding
-- [ ] Create `jungle/dashboard/` directory with FastAPI project structure
-- [ ] Initialize `pyproject.toml` with dependencies (fastapi, uvicorn, sqlalchemy, redis, httpx, jinja2)
-- [ ] Add `Dockerfile` and update `compose.yaml` with `dashboard` service
-- [ ] Configure environment variables (database URLs, API keys, service endpoints)
+Landed as `jungle/app/` rather than `jungle/dashboard/`: roadmap decision D4 makes
+dashboard, tracker, maintenance and gateway routers of one app, not four services.
+- [x] Create FastAPI project structure (`jungle/app/brownbear/`)
+- [x] Initialize `pyproject.toml` with dependencies (fastapi, uvicorn, sqlalchemy, redis, httpx, jinja2)
+- [x] Add `Dockerfile` and update `compose.yaml` with the `app` service
+- [x] Configure environment variables (database URLs, API keys, service endpoints)
 
 ### 1.2 — Database & Models
 - [ ] Design SQLite/PostgreSQL schema for analytics tables:
@@ -59,10 +61,11 @@ Build a Python FastAPI application that serves as a real-time dashboard and anal
 - [ ] Seed database with test data
 
 ### 1.3 — Service Connectors
-- [ ] Ollama connector — poll `/api/tags` and `/api/ps` for model stats
-- [ ] ChromaDB connector — fetch collection stats via `/api/v1/collections`
-- [ ] Redis connector — use `INFO` command for memory, keyspace, hit/miss stats
-- [ ] PostgreSQL connector — connection pool stats
+- [x] Ollama connector — poll `/api/tags` and `/api/ps` for model stats
+- [x] ChromaDB connector — fetch collection stats. **`/api/v1` now returns 410 Gone**;
+      the connector uses v2's tenant-scoped path and the version is a setting
+- [x] Redis connector — use `INFO` command for memory, keyspace, hit/miss stats
+- [x] PostgreSQL connector — connection pool stats
 
 ### 1.4 — Background Collector
 - [ ] Background task ( APScheduler or asyncio ) that periodically:
@@ -72,7 +75,7 @@ Build a Python FastAPI application that serves as a real-time dashboard and anal
 - [ ] Store collected metrics in analytics database
 
 ### 1.5 — API Endpoints
-- [ ] `GET /api/health` — system health summary
+- [x] `GET /api/health` — system health summary (plus `/api/health/live` for liveness)
 - [ ] `GET /api/tokens` — token usage with filters (model, period, source)
 - [ ] `GET /api/cache` — cache performance stats
 - [ ] `GET /api/collections` — ChromaDB collection overview

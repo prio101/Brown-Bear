@@ -10,7 +10,43 @@
 
 Turn Brown Bear from an infrastructure-only stack (`compose.yaml`) into a running Python application that monitors, meters, exposes, and maintains the local AI stack.
 
-**Current state:** 6 containers running; zero lines of application code; 32 unchecked subtasks across 4 specs.
+**Current state:** 7 containers running. Phase 0 complete, Phase 1 partially complete.
+
+---
+
+## Status
+
+**Milestone 0 — met.** `docker compose up -d` starts the `app` container; `GET /api/health`
+reports live status for Ollama, ChromaDB, Redis and PostgreSQL.
+
+**Milestone 1 — partially met.** An Ollama call through the proxy produces a `token_events`
+row with correct counts and cost. The period rollup half (M5, M6) is not built, so the
+"after an hour, a matching `token_periods` row exists" half of the milestone does not hold yet.
+
+| Done | Remaining in Phase 1 |
+|---|---|
+| F1–F6, F8, F9 | — |
+| M1, M2, M3, M4 | M5, M6 (aggregation), M7 (read endpoints), M8 (remote webhook + SDK) |
+
+Verified against the running stack: token counts match Ollama's own `prompt_eval_count` /
+`eval_count`; `gpt-4` at 1000 in / 500 out prices to exactly $0.06; a replayed `request_id`
+is rejected as a duplicate; local models record at cost 0.
+
+```bash
+docker compose up -d                    # whole stack incl. the app on :8080
+curl localhost:8080/api/health          # all four services
+docker compose run --rm app alembic upgrade head
+docker build --target dev -t brownbear-dev jungle/app && docker run --rm brownbear-dev
+```
+
+**Two findings that change the specs as written:**
+
+1. ChromaDB `/api/v1` returns **410 Gone** on `chromadb/chroma:latest` — every spec that
+   references v1 paths is out of date, and `QWEN.md`'s documented health-check command
+   fails. The connector uses v2; the image tag should be pinned.
+2. This Ollama server rejects `/api/embed` with 501 (`--embeddings` not enabled, and no
+   embedding model is pulled). Spec 002's push/pull sync and spec 004's re-embedding both
+   assume working embeddings — resolve before starting either.
 
 ---
 

@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     # runs in exactly one place.
     scheduler_enabled: bool = True
 
+    # --- monitoring collection ---
+    snapshot_interval_seconds: int = 30
+    cache_sample_interval_seconds: int = 30
+    # At a 30s interval these tables grow by ~5,800 rows a day each; nothing
+    # else would ever remove them. Token retention is separate and longer.
+    monitoring_retention_days: int = 7
+
     # --- token tracking ---
     default_currency: str = "USD"
     # Requests slower than this are still proxied; only the upstream read waits.

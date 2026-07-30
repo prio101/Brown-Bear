@@ -21,8 +21,10 @@ from datetime import UTC, datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from brownbear.aggregation import catch_up, catch_up_all
+from brownbear.collector import collect_cache_sample, collect_system_snapshot, prune_monitoring
 from brownbear.config import get_settings
 from brownbear.models.tokens import PeriodType
 
@@ -94,6 +96,34 @@ def start_scheduler() -> AsyncIOScheduler | None:
             misfire_grace_time=3600,
         )
 
+    settings = get_settings()
+    # Collection jobs are coroutines and run on the event loop; each one does
+    # its blocking database write in a worker thread.
+    _scheduler.add_job(
+        collect_system_snapshot,
+        trigger=IntervalTrigger(seconds=settings.snapshot_interval_seconds),
+        id="collect-system-snapshot",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        collect_cache_sample,
+        trigger=IntervalTrigger(seconds=settings.cache_sample_interval_seconds),
+        id="collect-cache-sample",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        prune_monitoring,
+        trigger=CronTrigger(hour=3, minute=0, timezone=UTC),
+        id="prune-monitoring",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     _scheduler.add_job(
         _run_startup_catch_up,
         trigger=DateTrigger(run_date=datetime.now(UTC) + timedelta(seconds=5), timezone=UTC),
@@ -102,7 +132,7 @@ def start_scheduler() -> AsyncIOScheduler | None:
     )
 
     _scheduler.start()
-    logger.info("scheduler started with %d job(s)", len(_JOBS) + 1)
+    logger.info("scheduler started with %d job(s)", len(_scheduler.get_jobs()))
     return _scheduler
 
 

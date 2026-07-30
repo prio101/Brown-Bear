@@ -1,6 +1,25 @@
-version: "3.8"
-
 services:
+  # ==================== BROWN BEAR APP ====================
+  # Single FastAPI app (roadmap decision D4): dashboard, tracker, maintenance
+  # and gateway are mounted routers, not separate services.
+  app:
+    build:
+      context: ./jungle/app
+    container_name: brownbear-app
+    ports:
+      - "8080:8080"
+    environment:
+      - BB_DATABASE_URL=postgresql+psycopg://vectoradmin:vectoradmin123@postgres:5432/brownbear
+      - BB_OLLAMA_URL=http://ollama:11434
+      - BB_CHROMA_URL=http://chromadb:8000
+      - BB_REDIS_URL=redis://:your_strong_password@redis:6379/0
+    depends_on:
+      - postgres
+      - ollama
+      - chromadb
+      - redis
+    restart: unless-stopped
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -42,6 +61,8 @@ services:
       POSTGRES_DB: vdbms
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Creates the dedicated `brownbear` database on a fresh volume only.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
 
   # ==================== VECTORADMIN ====================

@@ -7,14 +7,13 @@ which database they are pointed at.
 
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
-
-from brownbear.config import get_settings
-from brownbear.db import Base
 
 # Importing the models package registers every table on Base.metadata.
 import brownbear.models  # noqa: F401
+from alembic import context
+from brownbear.config import get_settings
+from brownbear.db import Base
 
 config = context.config
 

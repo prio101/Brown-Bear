@@ -31,8 +31,20 @@ router = APIRouter(prefix="/ollama", tags=["ollama"])
 TRACKED_ENDPOINTS = {"api/chat", "api/generate", "api/embed", "api/embeddings"}
 
 # Headers that describe a single hop and must not be forwarded.
-_SKIP_REQUEST_HEADERS = {"host", "content-length", "connection", "transfer-encoding", "accept-encoding"}
-_SKIP_RESPONSE_HEADERS = {"content-length", "content-encoding", "transfer-encoding", "connection"}
+_SKIP_REQUEST_HEADERS = {
+    "host",
+    "content-length",
+    "connection",
+    "transfer-encoding",
+    # Dropped so httpx hands us a decoded body to read counts from.
+    "accept-encoding",
+}
+_SKIP_RESPONSE_HEADERS = {
+    "content-length",
+    "content-encoding",
+    "transfer-encoding",
+    "connection",
+}
 
 # httpx decodes the body for us, so a huge embedding response would otherwise
 # be buffered in full just to read a counter off the end of it.

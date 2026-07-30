@@ -34,10 +34,13 @@ packages = ["brownbear"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# The runtime image runs as a non-root user with a read-only working tree.
+cache_dir = "/tmp/pytest_cache"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+cache-dir = "/tmp/ruff_cache"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

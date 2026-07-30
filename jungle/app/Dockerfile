@@ -20,3 +20,13 @@ COPY brownbear ./brownbear
 USER brownbear
 EXPOSE 8080
 CMD ["uvicorn", "brownbear.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+# Test image. The suite fakes every connector, so it needs no running stack:
+#   docker build --target dev -t brownbear-dev jungle/app && docker run --rm brownbear-dev
+FROM runtime AS dev
+USER root
+RUN pip install --no-cache-dir pytest pytest-asyncio ruff
+COPY pyproject.toml ./
+COPY tests ./tests
+USER brownbear
+CMD ["pytest", "-q"]

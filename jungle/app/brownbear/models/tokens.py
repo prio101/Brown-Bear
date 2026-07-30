@@ -26,14 +26,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from brownbear.db import Base
 
 
-class TokenSource(str, enum.Enum):
+class TokenSource(enum.StrEnum):
     """Where the tokens were spent."""
 
     local_ollama = "local_ollama"
     remote_api = "remote_api"
 
 
-class PeriodType(str, enum.Enum):
+class PeriodType(enum.StrEnum):
     hourly = "hourly"
     daily = "daily"
     weekly = "weekly"

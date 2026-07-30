@@ -5,6 +5,9 @@ services:
   app:
     build:
       context: ./jungle/app
+      # Explicit: without it Compose builds the Dockerfile's last stage, which
+      # is `dev` — the app would come up running pytest instead of uvicorn.
+      target: runtime
     container_name: brownbear-app
     ports:
       - "8080:8080"

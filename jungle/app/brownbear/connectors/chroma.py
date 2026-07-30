@@ -56,6 +56,44 @@ async def list_collections() -> list[dict[str, Any]]:
     return payload if isinstance(payload, list) else payload.get("collections", [])
 
 
+async def collection_count(collection_id: str) -> int:
+    """Document count for one collection."""
+    settings = get_settings()
+    resp = await get_http_client().get(
+        f"{collections_path()}/{collection_id}/count",
+        timeout=settings.health_timeout_seconds,
+    )
+    resp.raise_for_status()
+    return int(resp.text.strip('"\n '))
+
+
+async def collections_with_counts() -> list[dict[str, Any]]:
+    """Collections plus their document counts (spec 001 §1.5).
+
+    A failed count leaves that collection listed with ``count: None`` rather
+    than failing the whole listing — one bad collection should not blank the
+    page.
+    """
+    collections = await list_collections()
+    results: list[dict[str, Any]] = []
+    for collection in collections:
+        identifier = collection.get("id") or collection.get("name")
+        entry = {
+            "id": collection.get("id"),
+            "name": collection.get("name"),
+            "metadata": collection.get("metadata"),
+            "dimension": collection.get("dimension"),
+            "count": None,
+            "error": None,
+        }
+        try:
+            entry["count"] = await collection_count(str(identifier))
+        except Exception as exc:  # noqa: BLE001
+            entry["error"] = f"{type(exc).__name__}: {exc}"
+        results.append(entry)
+    return results
+
+
 async def check() -> ServiceHealth:
     async def probe() -> dict[str, Any]:
         await heartbeat()

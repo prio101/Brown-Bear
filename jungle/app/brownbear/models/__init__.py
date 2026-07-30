@@ -4,6 +4,7 @@ Importing this package must register every table on ``Base.metadata`` —
 Alembic's autogenerate depends on it. Add each new model module here.
 """
 
+from brownbear.models.aggregation import AggregationRun, RunStatus
 from brownbear.models.tokens import (
     ModelPricing,
     PeriodType,
@@ -13,8 +14,10 @@ from brownbear.models.tokens import (
 )
 
 __all__ = [
+    "AggregationRun",
     "ModelPricing",
     "PeriodType",
+    "RunStatus",
     "TokenEvent",
     "TokenPeriod",
     "TokenSource",

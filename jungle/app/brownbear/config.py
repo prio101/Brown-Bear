@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # ChromaDB dropped /api/v1 (it now returns 410); v2 is current.
     chroma_api_version: str = "v2"
 
+    # --- background jobs ---
+    # Off in tests, and useful to disable on a second replica so aggregation
+    # runs in exactly one place.
+    scheduler_enabled: bool = True
+
     # --- token tracking ---
     default_currency: str = "USD"
     # Requests slower than this are still proxied; only the upstream read waits.

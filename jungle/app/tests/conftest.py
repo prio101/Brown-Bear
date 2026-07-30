@@ -12,6 +12,13 @@ from fastapi.testclient import TestClient
 from brownbear.main import create_app
 
 
+@pytest.fixture(autouse=True)
+def _no_scheduler(monkeypatch):
+    """Keep background aggregation out of the tests entirely."""
+    monkeypatch.setattr("brownbear.scheduler.start_scheduler", lambda: None)
+    monkeypatch.setattr("brownbear.scheduler.shutdown_scheduler", lambda: None)
+
+
 @pytest.fixture
 def client() -> TestClient:
     with TestClient(create_app()) as test_client:

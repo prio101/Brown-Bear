@@ -1,0 +1,164 @@
+{% extends "base.html" %} {% block title %}Cache · Brown Bear{% endblock %} {% block content %}
+<div class="page-head">
+  <h1>Cache</h1>
+  <p>Redis counters are cumulative, so every rate here is a delta across the window.</p>
+</div>
+
+<div class="filters">
+  <label for="window">Window</label>
+  <select id="window">
+    <option value="60" selected>Last hour</option>
+    <option value="360">Last 6 hours</option>
+    <option value="1440">Last 24 hours</option>
+    <option value="10080">Last 7 days</option>
+  </select>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat-label">Hit rate in window</div>
+    <div class="hero-value" id="hero-rate">—</div>
+    <div class="stat-note" id="hero-note">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Memory in use</div>
+    <div class="stat-value" id="stat-memory">—</div>
+    <div class="stat-note" id="stat-keys">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Evicted in window</div>
+    <div class="stat-value" id="stat-evicted">—</div>
+    <div class="stat-note" id="stat-expired">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Lifetime hit rate</div>
+    <div class="stat-value" id="stat-lifetime">—</div>
+    <div class="stat-note">Since the Redis process started</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Hit rate per interval</h2></div>
+    <p class="sub" id="rate-sub">Share of lookups served from cache in each sampling interval</p>
+    <div class="chart-wrap" id="rate-chart"></div>
+    <div id="rate-table"></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Memory in use</h2></div>
+    <p class="sub">Reported by Redis at each sample</p>
+    <div class="chart-wrap" id="memory-chart"></div>
+  </div>
+</div>
+
+<p class="footnote">
+  An interval with no lookups has no hit rate to report and is drawn at zero; the table shows the
+  underlying hit and miss counts so an idle window is not mistaken for a cold cache.
+</p>
+{% endblock %} {% block scripts %}
+<script>
+  const windowEl = document.getElementById("window");
+
+  async function refresh() {
+    const minutes = windowEl.value;
+    const main = document.querySelector("main");
+    main.classList.add("stale");
+    try {
+      const data = await BB.get(`/api/cache?minutes=${minutes}`);
+
+      if (!data.samples) {
+        document.getElementById("hero-rate").textContent = "—";
+        document.getElementById("hero-note").textContent = "No samples in this window yet";
+        BB.lineChart(document.getElementById("rate-chart"), { series: [], xLabels: [] });
+        BB.table(document.getElementById("rate-table"), [], []);
+        return;
+      }
+
+      const w = data.window;
+      document.getElementById("hero-rate").textContent =
+        w.hit_rate === null ? "—" : BB.fmtPercent(w.hit_rate);
+      document.getElementById("hero-note").textContent =
+        w.hit_rate === null
+          ? "No lookups in this window"
+          : `${w.hits.toLocaleString()} hits · ${w.misses.toLocaleString()} misses`;
+      document.getElementById("stat-memory").textContent = BB.fmtBytes(
+        data.current.used_memory_bytes
+      );
+      document.getElementById("stat-keys").textContent =
+        `${data.current.total_keys.toLocaleString()} keys · ${data.current.connected_clients} client(s)`;
+      document.getElementById("stat-evicted").textContent = w.evicted_keys.toLocaleString();
+      document.getElementById("stat-expired").textContent =
+        `${w.expired_keys.toLocaleString()} expired`;
+      document.getElementById("stat-lifetime").textContent =
+        data.current.lifetime_hit_rate === null
+          ? "—"
+          : BB.fmtPercent(data.current.lifetime_hit_rate);
+
+      const series = data.series;
+      document.getElementById("rate-sub").textContent =
+        `${data.samples} samples · ${series.length} intervals`;
+
+      // Single series: no legend box — the card title already names it.
+      BB.lineChart(document.getElementById("rate-chart"), {
+        series: [
+          {
+            name: "Hit rate",
+            color: "--series-1",
+            points: series.map((p) => ({ y: p.hit_rate === null ? 0 : p.hit_rate * 100 })),
+          },
+        ],
+        xLabels: series.map((p) => BB.fmtTime(p.timestamp)),
+        yFormat: (v) => `${v}%`,
+        valueFormat: (v) => `${v.toFixed(1)}%`,
+        yMax: 100,
+        area: true,
+        ariaLabel: "Cache hit rate per sampling interval",
+      });
+
+      BB.lineChart(document.getElementById("memory-chart"), {
+        series: [
+          {
+            name: "Memory",
+            color: "--series-1",
+            points: series.map((p) => ({ y: p.used_memory_bytes })),
+          },
+        ],
+        xLabels: series.map((p) => BB.fmtTime(p.timestamp)),
+        yFormat: BB.fmtBytes,
+        valueFormat: BB.fmtBytes,
+        area: true,
+        height: 200,
+        ariaLabel: "Redis memory in use over time",
+      });
+
+      BB.table(
+        document.getElementById("rate-table"),
+        [
+          { label: "Time", render: (r) => BB.fmtTime(r.timestamp) },
+          { label: "Hits", num: true, render: (r) => r.hits.toLocaleString() },
+          { label: "Misses", num: true, render: (r) => r.misses.toLocaleString() },
+          {
+            label: "Hit rate",
+            num: true,
+            render: (r) => (r.hit_rate === null ? "no lookups" : BB.fmtPercent(r.hit_rate)),
+          },
+          { label: "Memory", num: true, render: (r) => BB.fmtBytes(r.used_memory_bytes) },
+          { label: "Keys", num: true, render: (r) => r.total_keys.toLocaleString() },
+        ],
+        series.slice(-15).reverse()
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      main.classList.remove("stale");
+    }
+  }
+
+  windowEl.addEventListener("change", refresh);
+  refresh();
+  setInterval(refresh, 20000);
+</script>
+{% endblock %}

@@ -1,0 +1,94 @@
+{% extends "base.html" %} {% block title %}Collections · Brown Bear{% endblock %} {% block content
+%}
+<div class="page-head">
+  <h1>Collections</h1>
+  <p>ChromaDB collections and their document counts.</p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat-label">Documents stored</div>
+    <div class="hero-value" id="hero-docs">—</div>
+    <div class="stat-note" id="hero-note">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Collections</div>
+    <div class="stat-value" id="stat-collections">—</div>
+    <div class="stat-note" id="stat-api">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Queries logged</div>
+    <div class="stat-value">0</div>
+    <div class="stat-note">Populated once the external query API lands</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Documents per collection</h2></div>
+    <p class="sub">One colour: collections are a nominal category, not a ranked scale</p>
+    <div class="chart-wrap" id="collection-chart"></div>
+    <div id="collection-table"></div>
+  </div>
+</div>
+
+<p class="footnote" id="footnote">
+  ChromaDB removed its <code>/api/v1</code> routes — they now return 410 Gone. This dashboard talks
+  to v2 through a single connector, so a future version change is one file to update.
+</p>
+{% endblock %} {% block scripts %}
+<script>
+  async function refresh() {
+    const main = document.querySelector("main");
+    main.classList.add("stale");
+    try {
+      const data = await BB.get("/api/collections");
+
+      if (!data.available) {
+        document.getElementById("footnote").textContent = `ChromaDB unreachable: ${data.error}`;
+        return;
+      }
+
+      document.getElementById("hero-docs").textContent = BB.fmtCompact(data.document_count);
+      document.getElementById("hero-note").textContent =
+        `across ${data.collection_count} collection${data.collection_count === 1 ? "" : "s"}`;
+      document.getElementById("stat-collections").textContent = data.collection_count;
+      document.getElementById("stat-api").textContent = `ChromaDB API ${data.api_version}`;
+
+      const counted = data.collections.filter((c) => c.count !== null);
+
+      BB.barChart(document.getElementById("collection-chart"), {
+        bars: counted
+          .slice()
+          .sort((a, b) => b.count - a.count)
+          .map((c) => ({ label: c.name, value: c.count })),
+        color: "--series-1",
+        seriesName: "Documents",
+        ariaLabel: "Documents per ChromaDB collection",
+      });
+
+      BB.table(
+        document.getElementById("collection-table"),
+        [
+          { label: "Collection", key: "name" },
+          {
+            label: "Documents",
+            num: true,
+            render: (r) => (r.count === null ? "unavailable" : r.count.toLocaleString()),
+          },
+          { label: "Dimension", num: true, render: (r) => r.dimension ?? "—" },
+          { label: "Status", render: (r) => (r.error ? r.error : "ok") },
+        ],
+        data.collections
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      main.classList.remove("stale");
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 30000);
+</script>
+{% endblock %}

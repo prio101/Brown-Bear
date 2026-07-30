@@ -1,0 +1,114 @@
+{% extends "base.html" %} {% block title %}Settings · Brown Bear{% endblock %} {% block content %}
+<div class="page-head">
+  <h1>Settings</h1>
+  <p>Overrides are stored in the database; anything left at its default stays environment-driven.</p>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Collection</h2></div>
+    <p class="sub">Rescheduled immediately on save — no restart</p>
+    <div id="group-live"></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Alert thresholds</h2></div>
+    <p class="sub">
+      Stored now, acted on when alerting lands. Nothing here fires an alert yet — the dashboard says
+      so rather than implying otherwise.
+    </p>
+    <div id="group-alerting"></div>
+  </div>
+</div>
+
+<div class="filters">
+  <button class="ghost-button" id="save" type="button">Save changes</button>
+  <span id="save-status" class="stat-note"></span>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  let current = [];
+
+  function fieldRow(setting) {
+    const step = setting.type === "int" ? "1" : "any";
+    return `<tr>
+      <td>
+        <div>${setting.label}</div>
+        <div class="stat-note">${setting.help}</div>
+      </td>
+      <td class="num">
+        <input type="number" data-key="${setting.key}" value="${setting.value}"
+               min="${setting.minimum}" max="${setting.maximum}" step="${step}"
+               style="width:120px;font:inherit;padding:5px 8px;border-radius:7px;
+                      border:1px solid var(--border);background:var(--surface-1);
+                      color:var(--text-primary);text-align:right" />
+      </td>
+      <td>${setting.unit}</td>
+      <td class="num">${setting.default}</td>
+      <td>${setting.source === "database" ? "overridden" : setting.source}</td>
+    </tr>`;
+  }
+
+  function renderGroup(node, settings) {
+    node.innerHTML = `<div class="table-scroll"><table>
+      <thead><tr>
+        <th>Setting</th><th class="num">Value</th><th>Unit</th>
+        <th class="num">Default</th><th>Source</th>
+      </tr></thead>
+      <tbody>${settings.map(fieldRow).join("")}</tbody>
+    </table></div>`;
+  }
+
+  function render() {
+    renderGroup(
+      document.getElementById("group-live"),
+      current.filter((s) => s.effect === "live")
+    );
+    renderGroup(
+      document.getElementById("group-alerting"),
+      current.filter((s) => s.effect === "alerting")
+    );
+  }
+
+  async function load() {
+    const data = await BB.get("/api/settings");
+    current = data.settings;
+    render();
+  }
+
+  document.getElementById("save").addEventListener("click", async () => {
+    const status = document.getElementById("save-status");
+    const payload = {};
+    document.querySelectorAll("input[data-key]").forEach((input) => {
+      payload[input.dataset.key] = Number(input.value);
+    });
+
+    status.textContent = "Saving…";
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        // Validation rejects the whole batch, so nothing is half-applied.
+        status.textContent = `Rejected: ${body.detail}`;
+        return;
+      }
+      current = body.settings;
+      render();
+      const live = Object.entries(body.rescheduled)
+        .map(([key, seconds]) => `${key.replace(/_/g, " ")} → ${seconds}s`)
+        .join(", ");
+      status.textContent = live ? `Saved. Rescheduled: ${live}` : "Saved.";
+    } catch (error) {
+      status.textContent = `Failed: ${error.message}`;
+    }
+  });
+
+  load();
+</script>
+{% endblock %}

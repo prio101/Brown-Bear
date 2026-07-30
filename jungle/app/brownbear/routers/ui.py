@@ -34,4 +34,16 @@ def tokens(request: Request) -> HTMLResponse:
     return _page(request, "tokens.html", "tokens")
 
 
-# Remaining pages are added as each one lands: /cache, /collections, /settings.
+@router.get("/cache", response_class=HTMLResponse)
+def cache(request: Request) -> HTMLResponse:
+    return _page(request, "cache.html", "cache")
+
+
+@router.get("/collections", response_class=HTMLResponse)
+def collections(request: Request) -> HTMLResponse:
+    return _page(request, "collections.html", "collections")
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings(request: Request) -> HTMLResponse:
+    return _page(request, "settings.html", "settings")

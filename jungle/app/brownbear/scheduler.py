@@ -50,6 +50,45 @@ _JOBS: list[tuple[str, PeriodType, CronTrigger]] = [
 ]
 
 
+SNAPSHOT_JOB_ID = "collect-system-snapshot"
+CACHE_JOB_ID = "collect-cache-sample"
+
+_INTERVAL_JOBS = {
+    "snapshot_interval_seconds": SNAPSHOT_JOB_ID,
+    "cache_sample_interval_seconds": CACHE_JOB_ID,
+}
+
+
+def _interval(key: str) -> int:
+    """Interval from the settings store, falling back to configuration.
+
+    Reading the store touches the database. If that fails at boot the app must
+    still come up collecting at its configured rate rather than not at all.
+    """
+    from brownbear import settings_store
+
+    try:
+        return int(settings_store.value_of(key))
+    except Exception:  # noqa: BLE001
+        fallback = getattr(get_settings(), key)
+        logger.warning("could not read %s from the settings store; using %s", key, fallback)
+        return int(fallback)
+
+
+def apply_collection_intervals() -> dict[str, int]:
+    """Reschedule collection jobs against the current settings, live."""
+    applied: dict[str, int] = {}
+    if _scheduler is None or not _scheduler.running:
+        return applied
+    for key, job_id in _INTERVAL_JOBS.items():
+        seconds = _interval(key)
+        applied[key] = seconds
+        if _scheduler.get_job(job_id):
+            _scheduler.reschedule_job(job_id, trigger=IntervalTrigger(seconds=seconds))
+    logger.info("collection intervals applied: %s", applied)
+    return applied
+
+
 def _run_catch_up(period: PeriodType) -> None:
     result = catch_up(period)
     if result["buckets"]:
@@ -96,21 +135,20 @@ def start_scheduler() -> AsyncIOScheduler | None:
             misfire_grace_time=3600,
         )
 
-    settings = get_settings()
     # Collection jobs are coroutines and run on the event loop; each one does
     # its blocking database write in a worker thread.
     _scheduler.add_job(
         collect_system_snapshot,
-        trigger=IntervalTrigger(seconds=settings.snapshot_interval_seconds),
-        id="collect-system-snapshot",
+        trigger=IntervalTrigger(seconds=_interval("snapshot_interval_seconds")),
+        id=SNAPSHOT_JOB_ID,
         replace_existing=True,
         coalesce=True,
         max_instances=1,
     )
     _scheduler.add_job(
         collect_cache_sample,
-        trigger=IntervalTrigger(seconds=settings.cache_sample_interval_seconds),
-        id="collect-cache-sample",
+        trigger=IntervalTrigger(seconds=_interval("cache_sample_interval_seconds")),
+        id=CACHE_JOB_ID,
         replace_existing=True,
         coalesce=True,
         max_instances=1,

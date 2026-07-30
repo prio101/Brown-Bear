@@ -28,9 +28,17 @@ historical token charts; `/metrics` scrapes clean.
 
 | Done | Remaining |
 |---|---|
-| F1–F9 | — |
-| M1–M7 | M8 (remote webhook + provider SDK wrappers) |
+| F1–F9 | F10 — placeholder credentials still live in `compose.yaml` |
+| M1–M7 | M8's SDK wrappers. Its *reporting* half landed as spec 005 §5.5 (`POST /ext/exchange`) |
 | D1t–D9t | Alert *evaluation* (H2) — thresholds are stored and editable, nothing fires yet |
+| **005 §5.1–5.6** | PDF ingest, queryable near-misses, dirty-window re-aggregation, in-app per-key auth, §5.7 dashboard |
+
+**Phase 4 started early (2026-07-31).** The context gateway is live and reachable through the
+tunnel: embeddings work, both collections exist in cosine space, and `/ext/documents`,
+`/ext/context` and `/ext/exchange` are verified end to end from outside. Authentication is a
+shared secret at the *edge* (bearer or basic, fail-closed) — a boundary control, not per-client
+identity, so G2's real auth is still owed. G3 (rate limiting), G4 (audit log), G7 (sync) and
+G8/G9 remain untouched.
 
 Verified against the running stack: token counts match Ollama's own `prompt_eval_count` /
 `eval_count`; `gpt-4` at 1000 in / 500 out prices to exactly $0.06; a replayed `request_id`
@@ -65,11 +73,19 @@ docker build --target dev -t brownbear-dev jungle/app && docker run --rm brownbe
 **Two findings that change the specs as written:**
 
 1. ChromaDB `/api/v1` returns **410 Gone** on `chromadb/chroma:latest` — every spec that
-   references v1 paths is out of date, and `QWEN.md`'s documented health-check command
-   fails. The connector uses v2; the image tag should be pinned.
-2. This Ollama server rejects `/api/embed` with 501 (`--embeddings` not enabled, and no
-   embedding model is pulled). Spec 002's push/pull sync and spec 004's re-embedding both
-   assume working embeddings — resolve before starting either.
+   references v1 paths is out of date, and `CLAUDE.md`/`QWEN.md`'s documented health-check
+   command fails. The connector uses v2; the image tag should be pinned.
+2. ~~This Ollama server rejects `/api/embed` with 501~~ — **misdiagnosed, and now resolved.**
+   The 501 text says `Start it with --embeddings`, which read as a missing server flag. It is
+   not: Ollama returns 501 for any model whose runner lacks embedding support, and the only
+   model pulled was a chat model. `ollama pull nomic-embed-text` fixed it with no compose
+   change. Embeddings return 768-dim vectors and batch correctly.
+
+**Still open from the same sweep:** every image is `:latest` (6 of them — Chroma is the urgent
+pin); `CLAUDE.md` and `QWEN.md` are byte-identical duplicates that both describe the project as
+two files and tell you to pull `llama3`, which is not pulled; and the `/tokens` page defaults to
+`daily`, a period with no closed window, so it renders empty while correct hourly data sits one
+selector click away.
 
 ---
 

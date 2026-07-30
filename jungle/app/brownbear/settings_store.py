@@ -123,6 +123,42 @@ SPECS: tuple[SettingSpec, ...] = (
         effect="alerting",
         fallback=0.0,
     ),
+    # --- context gateway (spec 005 §5.4) ---
+    SettingSpec(
+        key="cache_similarity_threshold",
+        label="Cache hit threshold",
+        kind=float,
+        # Floor of 0.5: below that, "similar" stops meaning anything and the
+        # cache would serve unrelated answers with confidence.
+        minimum=0.5,
+        maximum=1.0,
+        unit="cosine",
+        help="Cosine similarity required to serve a cached answer. Higher is stricter.",
+        effect="live",
+        config_attr="cache_similarity_threshold",
+    ),
+    SettingSpec(
+        key="context_top_k",
+        label="Retrieved chunks",
+        kind=int,
+        minimum=1,
+        maximum=50,
+        unit="chunks",
+        help="How many knowledge chunks a context request returns.",
+        effect="live",
+        config_attr="context_top_k",
+    ),
+    SettingSpec(
+        key="cache_ttl_days",
+        label="Cached answer lifetime",
+        kind=int,
+        minimum=0,
+        maximum=3650,
+        unit="days",
+        help="Age at which a cached answer stops being served. 0 disables expiry.",
+        effect="live",
+        config_attr="cache_ttl_days",
+    ),
 )
 
 BY_KEY = {spec.key: spec for spec in SPECS}

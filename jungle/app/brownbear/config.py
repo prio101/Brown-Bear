@@ -54,6 +54,33 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 600.0
     health_timeout_seconds: float = 5.0
 
+    # --- context gateway (spec 005) ---
+    # An embedding model, not a chat model: Ollama answers /api/embed with 501
+    # for a model whose runner has no embedding support.
+    embedding_model: str = "nomic-embed-text"
+    embedding_timeout_seconds: float = 120.0
+    # Texts per /api/embed call. Ollama loads the whole batch at once, so this
+    # bounds peak memory rather than optimising throughput.
+    embedding_batch_size: int = 32
+
+    # Two collections, never one: a cache hit must be a prior *answer*, and a
+    # mixed collection lets a document paragraph clear the threshold and get
+    # served as though it were one (spec 005).
+    conversations_collection: str = "conversations"
+    knowledge_collection: str = "knowledge"
+
+    # Chunking for ingested documents. Overlap keeps a sentence spanning a
+    # boundary retrievable from either side.
+    chunk_chars: int = 1200
+    chunk_overlap_chars: int = 200
+
+    # Start strict: a wrong cache hit is worse than no cache. Tune down only
+    # with evidence from the near-miss log. Editable at runtime via /settings.
+    cache_similarity_threshold: float = 0.95
+    context_top_k: int = 5
+    # Code answers go stale as the codebase moves. 0 disables expiry.
+    cache_ttl_days: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

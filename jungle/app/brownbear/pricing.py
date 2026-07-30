@@ -30,8 +30,14 @@ def _candidates(model: str) -> list[str]:
     return names
 
 
-def get_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str]:
-    """Return (input_per_1k, output_per_1k, currency) for a model."""
+def resolve_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str, str | None]:
+    """Rates plus the pricing row that produced them.
+
+    The fourth element is the matched model name, or None when only the ``*``
+    fallback applied. Callers reporting *paid* usage need that distinction: the
+    fallback prices an unknown model at zero, which is right for local
+    inference and wrong for a remote API (spec 005 §5.5).
+    """
     for name in _candidates(model):
         row = session.execute(
             select(ModelPricing)
@@ -44,8 +50,23 @@ def get_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str]:
             .limit(1)
         ).scalar_one_or_none()
         if row is not None:
-            return row.input_cost_per_1k, row.output_cost_per_1k, row.currency
-    return Decimal("0"), Decimal("0"), "USD"
+            matched = None if name == FALLBACK_MODEL else name
+            return row.input_cost_per_1k, row.output_cost_per_1k, row.currency, matched
+    return Decimal("0"), Decimal("0"), "USD", None
+
+
+def get_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str]:
+    """Return (input_per_1k, output_per_1k, currency) for a model."""
+    input_rate, output_rate, currency, _ = resolve_rates(session, model)
+    return input_rate, output_rate, currency
+
+
+def has_explicit_price(model: str) -> bool:
+    """Whether this model has its own pricing row rather than the ``*`` fallback."""
+    from brownbear.db import session_scope
+
+    with session_scope() as session:
+        return resolve_rates(session, model)[3] is not None
 
 
 def calculate_cost(

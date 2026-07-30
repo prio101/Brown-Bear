@@ -5,7 +5,7 @@ Routers are mounted here as each spec lands:
   /ollama/*     — M3 token-capturing proxy (this phase)
   /api/tokens   — spec 003 read endpoints
   /api/maintenance — spec 004
-  /ext          — spec 002 external gateway
+  /ext          — spec 005 context gateway (semantic cache + retrieval)
 """
 
 from contextlib import asynccontextmanager
@@ -41,7 +41,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    from brownbear.routers import export, health, metrics, monitoring, ollama_proxy, tokens, ui
+    from brownbear.routers import (
+        export,
+        ext,
+        health,
+        metrics,
+        monitoring,
+        ollama_proxy,
+        tokens,
+        ui,
+    )
     from brownbear.routers import settings as settings_router
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -52,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(export.router)
     app.include_router(settings_router.router)
+    app.include_router(ext.router)
     app.include_router(ollama_proxy.router)
     # Last: the UI owns "/", which the API used to serve.
     app.include_router(ui.router)

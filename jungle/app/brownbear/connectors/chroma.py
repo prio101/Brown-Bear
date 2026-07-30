@@ -94,6 +94,129 @@ async def collections_with_counts() -> list[dict[str, Any]]:
     return results
 
 
+async def get_collection(name: str) -> dict[str, Any] | None:
+    """One collection by name, or None if it does not exist."""
+    settings = get_settings()
+    resp = await get_http_client().get(
+        f"{collections_path()}/{name}", timeout=settings.health_timeout_seconds
+    )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def ensure_collection(
+    name: str,
+    *,
+    space: str = "cosine",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Get or create a collection.
+
+    Space defaults to cosine because the semantic cache thresholds on cosine
+    similarity; the Chroma default is l2, whose distances are not comparable to
+    a 0.95 cutoff. Space is fixed at creation — an existing collection is
+    returned as-is rather than silently reinterpreted.
+    """
+    existing = await get_collection(name)
+    if existing is not None:
+        return existing
+
+    body: dict[str, Any] = {
+        "name": name,
+        "get_or_create": True,
+        "configuration": {"hnsw": {"space": space}},
+    }
+    if metadata:
+        body["metadata"] = metadata
+
+    settings = get_settings()
+    resp = await get_http_client().post(
+        collections_path(), json=body, timeout=settings.health_timeout_seconds
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def collection_space(collection: dict[str, Any]) -> str | None:
+    """The distance function a collection was built with."""
+    config = collection.get("configuration_json") or {}
+    return (config.get("hnsw") or {}).get("space")
+
+
+async def upsert(
+    collection_id: str,
+    *,
+    ids: list[str],
+    embeddings: list[list[float]],
+    documents: list[str],
+    metadatas: list[dict[str, Any]],
+) -> None:
+    """Insert or replace documents. Upsert, so re-ingesting the same id is idempotent."""
+    if not ids:
+        return
+    settings = get_settings()
+    resp = await get_http_client().post(
+        f"{collections_path()}/{collection_id}/upsert",
+        json={
+            "ids": ids,
+            "embeddings": embeddings,
+            "documents": documents,
+            "metadatas": metadatas,
+        },
+        timeout=settings.embedding_timeout_seconds,
+    )
+    resp.raise_for_status()
+
+
+async def query(
+    collection_id: str,
+    *,
+    embedding: list[float],
+    n_results: int = 5,
+    where: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Nearest documents, flattened into one row per hit.
+
+    Chroma nests results one level per query embedding; this sends a single
+    embedding and unwraps that level so callers do not index into [0].
+    """
+    body: dict[str, Any] = {
+        "query_embeddings": [embedding],
+        "n_results": max(1, n_results),
+        "include": ["documents", "metadatas", "distances"],
+    }
+    if where:
+        body["where"] = where
+
+    settings = get_settings()
+    resp = await get_http_client().post(
+        f"{collections_path()}/{collection_id}/query",
+        json=body,
+        timeout=settings.embedding_timeout_seconds,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+
+    def first(key: str) -> list[Any]:
+        nested = payload.get(key) or []
+        return nested[0] if nested and isinstance(nested[0], list) else []
+
+    ids, docs = first("ids"), first("documents")
+    metas, distances = first("metadatas"), first("distances")
+
+    return [
+        {
+            "id": ids[i] if i < len(ids) else None,
+            "document": docs[i] if i < len(docs) else None,
+            "metadata": metas[i] if i < len(metas) else {},
+            "distance": distances[i] if i < len(distances) else None,
+        }
+        for i in range(len(ids))
+    ]
+
+
 async def check() -> ServiceHealth:
     async def probe() -> dict[str, Any]:
         await heartbeat()

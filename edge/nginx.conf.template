@@ -1,0 +1,204 @@
+# Edge allowlist and authentication for everything reachable from the internet.
+#
+# This file is an envsubst *template*: the nginx image renders
+# /etc/nginx/templates/*.template into /etc/nginx/conf.d/ at startup, so the
+# shared secret lives in .env and never in a tracked file.
+#
+# Two layers, and both matter:
+#
+#   1. Authentication — one shared secret, accepted in either form:
+#        Authorization: Bearer <BB_EDGE_TOKEN>     (machine clients)
+#        Authorization: Basic  <base64 user:pass>  (browsers, via the prompt)
+#      A browser cannot be told to send a bearer header from the address bar,
+#      which is why both forms carry the same secret.
+#
+#   2. Allowlist — the origin still default-denies. Auth stops strangers; the
+#      allowlist stops an authenticated caller from reaching things that were
+#      never meant to be remote, like model deletion or settings writes.
+#
+# The tunnel points at this origin, never at app:8080 directly, so both layers
+# hold even for a quick tunnel — which can filter neither paths nor headers.
+
+# The credential strings below are longer than the default 64-byte bucket, and
+# nginx refuses to start rather than truncating them.
+map_hash_bucket_size 256;
+
+# Valid credential forms. Anything else, including an absent header, is 0.
+map $http_authorization $bb_auth_form {
+    default                     0;
+    "Bearer ${BB_EDGE_TOKEN}"   1;
+    "Basic ${BB_EDGE_BASIC}"    1;
+}
+
+# Fail closed when the secret is unset. envsubst renders an empty
+# BB_EDGE_TOKEN as the literal credential "Bearer ", which anyone could send —
+# so an unset secret must reject everyone rather than admit them. The source
+# carries a real variable because a bare literal is not a valid map source.
+map "$request_method:${BB_EDGE_TOKEN}" $bb_secret_set {
+    "~^[A-Z]+:$"  0;
+    default       1;
+}
+
+# Authenticated only when the secret exists *and* the credential matched.
+map "$bb_secret_set$bb_auth_form" $bb_auth {
+    "11"     1;
+    default  0;
+}
+
+server {
+    listen 8081;
+    server_name _;
+
+    # Keep the origin quiet about what it is running.
+    server_tokens off;
+
+    # A body large enough for document ingestion, small enough that the
+    # endpoint cannot be used to fill the disk.
+    client_max_body_size 32m;
+    client_body_timeout 60s;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy no-referrer always;
+
+    # ---- 401 handler ------------------------------------------------------
+    # WWW-Authenticate is what makes a browser show a login prompt; without it
+    # a human visiting the dashboard just sees a bare error.
+    location @unauthorized {
+        default_type application/json;
+        add_header WWW-Authenticate 'Basic realm="Brown Bear", charset="UTF-8"' always;
+        add_header X-Content-Type-Options nosniff always;
+        return 401 '{"error":"unauthorized","detail":"Send Authorization: Bearer <token>, or sign in as user bb."}';
+    }
+
+    # ---- default: deny ----------------------------------------------------
+    # Everything not named below lands here, authenticated or not: PUT
+    # /api/settings, POST /api/tokens/aggregate, /metrics, and every Ollama
+    # model-management route.
+    location / {
+        default_type application/json;
+        return 403 '{"error":"not exposed","detail":"This path is not published through the tunnel."}';
+    }
+
+    # ---- public: liveness -------------------------------------------------
+    # Deliberately unauthenticated so an external monitor can probe it.
+    # Reveals nothing but whether the app is up.
+    location = /api/health/live {
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/api/health/live;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # ---- authenticated: context gateway (spec 005) ------------------------
+    # Prompts in, cached answers and retrieved context out. Never public: this
+    # carries the content of what is being asked.
+    location /ext/ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        proxy_pass http://app:8080/ext/;
+        include /etc/nginx/proxy_common.conf;
+        # Embedding a large document runs a model.
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    # ---- authenticated: dashboard pages ----------------------------------
+    location = / {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    location ~ ^/(tokens|cache|collections|settings)$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080$uri;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    location /static/ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/static/;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # ---- authenticated: read-only API the pages consume ------------------
+    # GET only. The write paths (PUT /api/settings, POST
+    # /api/tokens/aggregate) fall through to the default deny, so a remote
+    # caller can read this stack's numbers but not reconfigure it.
+    location ~ ^/api/(info|health|system|cache|collections|export)$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    location = /api/settings {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        # Read the configuration remotely; change it only on the host.
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/api/settings;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    location ~ ^/api/tokens/(summary|history|by-model|by-source|aggregation)$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # ---- authenticated: inference ----------------------------------------
+    # Exactly the routes that *use* a model, named individually rather than as
+    # /ollama/ so that pull, create, copy, push and delete stay denied — those
+    # let a caller fill the disk or destroy pulled models.
+    location = /ollama/api/chat {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except POST { deny all; }
+        proxy_pass http://app:8080/ollama/api/chat;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    location = /ollama/api/generate {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except POST { deny all; }
+        proxy_pass http://app:8080/ollama/api/generate;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    location = /ollama/api/embed {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except POST { deny all; }
+        proxy_pass http://app:8080/ollama/api/embed;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    location = /ollama/api/tags {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/ollama/api/tags;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+}

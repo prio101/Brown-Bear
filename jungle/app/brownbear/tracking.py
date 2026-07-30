@@ -5,6 +5,7 @@ inference call into a failed one. Every failure is logged and swallowed.
 """
 
 import logging
+from decimal import Decimal
 from typing import Any
 
 import anyio.to_thread
@@ -27,8 +28,14 @@ def record_token_event_sync(
     session_id: str | None = None,
     user_id: str | None = None,
     request_id: str | None = None,
+    cost_usd: Decimal | None = None,
 ) -> int | None:
-    """Persist one token event. Returns its id, or None if it was a duplicate."""
+    """Persist one token event. Returns its id, or None if it was a duplicate.
+
+    ``cost_usd`` lets a caller that already knows the price report it — a remote
+    client billed by its own provider knows the real figure, where the local
+    pricing table may only have the ``*`` fallback that prices it at zero.
+    """
     with session_scope() as session:
         input_rate, output_rate, currency = get_rates(session, model)
         event = TokenEvent(
@@ -41,7 +48,11 @@ def record_token_event_sync(
             session_id=session_id,
             user_id=user_id,
             request_id=request_id,
-            cost_usd=calculate_cost(tokens_in, tokens_out, input_rate, output_rate),
+            cost_usd=(
+                cost_usd
+                if cost_usd is not None
+                else calculate_cost(tokens_in, tokens_out, input_rate, output_rate)
+            ),
             currency=currency,
         )
         session.add(event)

@@ -66,15 +66,25 @@ embedding models invalidates every vector in it — that is spec 004's `ReEmbedd
 
 ---
 
-## Blockers (must clear before any of this works)
+## Blockers — all three cleared 2026-07-31
 
-1. **Ollama has no embeddings.** `/api/embed` returns 501 on this host and no embedding
-   model is pulled. Both the cache and retrieval depend on it. Pull `nomic-embed-text`
-   (768-dim) and confirm the endpoint answers.
-2. **No authentication anywhere.** Today `PUT /api/settings`, `POST /api/tokens/aggregate`
-   and the whole `/ollama/*` proxy are open. Opening a tunnel to :8080 as it stands exposes
-   all of it. Spec 002 §2.3 must land *with* the tunnel, not after.
-3. **ChromaDB is empty.** Ingestion (§5.3) has to exist before retrieval means anything.
+1. ~~**Ollama has no embeddings.**~~ **Cleared, and the diagnosis was wrong.** The 501 said
+   `Start it with --embeddings`, which read as a missing server flag; it is not. Ollama
+   returns 501 for any model whose runner has no embedding support, and the only model
+   pulled was a chat model. Pulling `nomic-embed-text` fixed it with **no compose change**:
+   `/api/embed` returns 768-dim vectors and batches correctly.
+2. ~~**No authentication anywhere.**~~ **Cleared at the edge, not in the app.** One shared
+   secret in `edge/nginx.conf.template`, accepted as `Authorization: Bearer` (machines) or
+   HTTP basic (browsers, which cannot send a bearer header from the address bar). The app
+   itself still has no auth — this is a boundary control, so anything bypassing the edge
+   bypasses it. Spec 002 §2.3's per-key auth, rate limiting and audit log are still open.
+3. ~~**ChromaDB is empty.**~~ `conversations` and `knowledge` are created on demand by
+   `/ext/health`, both in **cosine** space, with embedding model and dimension recorded.
+
+**Why cosine matters.** Chroma defaults to `l2`, whose distances are unbounded and cannot be
+compared to a 0.95 cutoff. Collections are created with cosine explicitly, and
+`gateway.similarity()` returns `None` for any other space — a non-cosine collection can
+never serve a hit rather than serving one on a meaningless number.
 
 ---
 
@@ -120,53 +130,79 @@ A cache that returns a confidently wrong answer is worse than no cache. Non-nego
 ## Subtasks
 
 ### 5.1 — Embeddings foundation
-- [ ] Enable embeddings on the Ollama service; pull `nomic-embed-text`
-- [ ] `connectors/ollama.embed()` with batching
-- [ ] Record embedding model + dimension per collection
+- [x] Pull `nomic-embed-text` — no server flag needed; see the blocker note above
+- [x] `connectors/ollama.embed()` with batching (`embedding_batch_size`, default 32)
+- [x] Record embedding model + dimension per collection
 
 ### 5.2 — Collections
-- [ ] Create `conversations` and `knowledge` collections with recorded dimensions
-- [ ] Metadata schema: project, source, model, created_at, stale_after
+- [x] Create `conversations` and `knowledge` collections with recorded dimensions
+- [x] Metadata schema: project, source, model, created_at, stale_after
 
 ### 5.3 — Ingestion
-- [ ] `POST /ext/documents` — text, chunked, embedded, stored in `knowledge`
-- [ ] PDF parsing on ingest
-- [ ] Re-ingest is idempotent by content hash
+- [x] `POST /ext/documents` — text, chunked, embedded, stored in `knowledge`
+- [ ] PDF parsing on ingest — **still open**; the endpoint takes text only
+- [x] Re-ingest is idempotent by content hash
 
 ### 5.4 — Context endpoint
-- [ ] `POST /ext/context` — embed, cache-check, retrieve, one response
-- [ ] Threshold, k and TTL configurable through the settings store
-- [ ] Near-miss logging
+- [x] `POST /ext/context` — embed, cache-check, retrieve, one response
+- [x] Threshold, k and TTL configurable through the settings store
+- [x] Near-miss logging — emitted to the application log with score and cutoff
+- [ ] Near-misses are not *queryable*: `query_logs` has no score column, so tuning the
+      threshold from data still means reading logs. A `cache_lookups` table would fix it.
 
 ### 5.5 — Exchange endpoint (M8)
-- [ ] `POST /ext/exchange` — store the pair, record `token_events`, dedup
-- [ ] Dirty-window re-aggregation for backdated usage
-- [ ] Unknown-price handling for remote models
+- [x] `POST /ext/exchange` — store the pair, record `token_events`, dedup
+- [ ] Dirty-window re-aggregation for backdated usage — **still open.** `catch_up` seeds its
+      cursor from the newest completed run and walks forward, so a reported event older than
+      that gets no bucket. Latent while clients report current usage; a real hole the moment
+      one backfills.
+- [~] Unknown-price handling: the endpoint accepts `cost_usd` from the client and **warns**
+      when a paid model has no pricing row, instead of silently reporting $0. The persisted
+      value is still 0 in that case — `token_events.cost_usd` is `NOT NULL`, so recording
+      genuinely-unknown cost needs a migration.
 
 ### 5.6 — Tunnel and auth (spec 002 §2.1–2.3)
 - [x] `cloudflared` service, profile-gated so nothing publishes by accident
-- [x] Default-deny edge allowlist (`edge/nginx.conf`) as the tunnel's origin
-- [ ] API-key middleware over every `/ext` and `/api` route — **deferred by decision**
+- [x] Default-deny edge allowlist (`edge/nginx.conf.template`) as the tunnel's origin
+- [x] Shared-secret authentication at the edge, bearer or basic, fail-closed when unset
+- [ ] Per-key auth *in the app* — still open. The edge is a boundary control: it identifies
+      nobody, cannot be revoked per client, and is bypassed by anything reaching :8080
+      directly. Spec 002 §2.3 remains the real fix.
 - [ ] Rate limiting, audit log
 
 #### What is exposed today
 
-The tunnel points at `edge:8081`, never at `app:8080`. The edge default-denies and forwards
-exactly two things:
+The tunnel points at `edge:8081`, never at `app:8080`. Two layers now stand in front of it:
+authentication, then the allowlist.
 
-| Path | Why it is safe without auth |
-|---|---|
-| `GET /api/health/live` | Returns `{"status":"ok"}` and nothing else |
-| `/ext/*` | The gateway surface. Does not exist yet, so it 404s today |
+| Path | Auth | Notes |
+|---|---|---|
+| `GET /api/health/live` | **none** | Deliberately public so an external monitor can probe it. Returns `{"status":"ok"}` and nothing else |
+| `/ext/*` | required | The gateway. Prompts in, cached answers and context out |
+| `GET /`, `/tokens`, `/cache`, `/collections`, `/settings`, `/static/*` | required | The dashboard, read-only |
+| `GET /api/{info,health,system,cache,collections,export}` | required | Read-only |
+| `GET /api/settings` | required | Read only — `PUT` is denied even with a valid credential |
+| `GET /api/tokens/{summary,history,by-model,by-source,aggregation}` | required | Read-only |
+| `POST /ollama/api/{chat,generate,embed}`, `GET /ollama/api/tags` | required | Inference only |
 
-Everything else — `/api/settings`, `/api/tokens/*`, `/api/export`, `/metrics`, the dashboard,
-and the whole `/ollama/*` proxy — returns 403 at the edge. Verified: a `PUT /api/settings`
-through the edge is refused and the setting is unchanged.
+Denied outright, credential or not: `PUT /api/settings`, `POST /api/tokens/aggregate`,
+`/metrics`, and every Ollama model-management route — `pull`, `create`, `copy`, `push`,
+`delete` — because those let a caller fill the disk or destroy pulled models.
 
-**This is containment, not authentication.** Anyone who learns the hostname can call the
-allowed paths. That is acceptable while the only allowed path is a liveness probe. It stops
-being acceptable the moment `/ext/*` carries prompts and returns retrieved context — so
-§2.3's API keys must land with 5.4, not after.
+**One secret, two forms.** `Authorization: Bearer <BB_EDGE_TOKEN>` for machines; HTTP basic
+(user `bb`, same token as the password) for browsers, which cannot be told to send a bearer
+header from the address bar. Both live in `.env`, which is gitignored; the config is an
+envsubst template so no secret is ever committed.
+
+**Fail-closed.** envsubst renders an unset `BB_EDGE_TOKEN` as the literal valid credential
+`"Bearer "`, which anyone could send. A guard map turns an empty secret into "reject
+everyone". Verified against a container started with no secret: every gated route 401s,
+including `Authorization: Bearer ` with the trailing space.
+
+**This is a boundary control, not per-client identity.** One secret shared by every caller:
+it cannot be revoked for one machine, it attributes nothing in the audit log, and anything
+that reaches `app:8080` directly — another process on the host, another container on the
+compose network — bypasses it completely. Spec 002 §2.3 is still the real fix.
 
 #### Runbook
 
@@ -194,16 +230,28 @@ Neither profile starts with a plain `docker compose up`.
 
 ## Acceptance criteria
 
-- [ ] A repeated question returns a cache hit with its score and matched prompt, and costs
-      zero tokens
-- [ ] A near-but-different question does **not** hit, and appears in the near-miss log
-- [ ] A hit never crosses `project` or `model` boundaries
-- [ ] A miss returns useful retrieved chunks with source attribution
-- [ ] Reported usage lands in `token_events` and reaches the right aggregate window even
-      when backdated
-- [ ] A paid model with no configured price reports unknown cost, never $0
-- [ ] Every `/ext` route rejects an unauthenticated call
-- [ ] Brown Bear being down degrades the client to a plain Claude call, never blocks it
+Verified 2026-07-31 through the live Cloudflare tunnel, not just locally.
+
+- [x] A repeated question returns a cache hit with its score and matched prompt, and costs
+      zero tokens — score 1.0, matched prompt echoed back
+- [x] A near-but-different question does **not** hit, and appears in the near-miss log —
+      "vector embeddings" vs "metadata" scored 0.829 against a 0.95 cutoff and was refused
+- [x] A hit never crosses `project` or `model` boundaries — both scoped by a Chroma `where`
+      filter; changing either returns "no candidates"
+- [x] A miss returns useful retrieved chunks with source attribution
+- [~] Reported usage lands in `token_events` — yes, deduplicated on `request_id`. **Backdated
+      usage still misses its window**: see the open item under §5.5
+- [~] A paid model with no configured price reports unknown cost, never $0 — it *warns* and
+      accepts a client-supplied `cost_usd`; the stored value is still 0 without one, pending
+      a nullable-cost migration
+- [x] Every `/ext` route rejects an unauthenticated call — 401 with a `WWW-Authenticate`
+      challenge; wrong, empty and absent credentials all rejected
+- [x] Brown Bear being down degrades the client rather than blocking it — a missing embedding
+      model answers 503 with what to fix, and the gateway falls back to its configured
+      defaults when the settings store is unreachable rather than failing the lookup
+
+Also verified: 92 unit tests pass (54 new), `ruff check` clean, and re-ingesting identical
+content returns the same chunk ids rather than duplicating them.
 
 ---
 

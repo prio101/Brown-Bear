@@ -24,9 +24,9 @@ services:
     restart: unless-stopped
 
   # ==================== EDGE (the tunnel's origin) ====================
-  # Default-deny allowlist in front of the app. The tunnel points here, never
-  # at app:8080, so the allowlist holds even for a quick tunnel — which cannot
-  # filter paths itself. See edge/nginx.conf.
+  # Authentication plus a default-deny allowlist in front of the app. The tunnel
+  # points here, never at app:8080, so both hold even for a quick tunnel — which
+  # can filter neither paths nor headers. See edge/nginx.conf.template.
   # Bound to loopback so it is testable locally without joining the LAN.
   edge:
     image: nginx:1.27-alpine
@@ -34,8 +34,22 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
-      - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # A template, not a conf: the nginx entrypoint runs envsubst over
+      # /etc/nginx/templates so the shared secret stays in .env.
+      - ./edge/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
       - ./edge/proxy_common.conf:/etc/nginx/proxy_common.conf:ro
+      # Timeouts are separate includes because nginx rejects a duplicate
+      # directive in one context: each location picks default or long, never both.
+      - ./edge/proxy_timeouts.conf:/etc/nginx/proxy_timeouts.conf:ro
+      - ./edge/proxy_timeouts_long.conf:/etc/nginx/proxy_timeouts_long.conf:ro
+    environment:
+      # Defaulted, not required: compose interpolates the whole file on every
+      # command, so a `:?` guard here would break `docker compose up` even when
+      # the tunnel profiles are not selected. An unset secret renders a config
+      # whose only valid credential is the literal empty string, and every
+      # authenticated route then answers 401 — closed, not open.
+      - BB_EDGE_TOKEN=${BB_EDGE_TOKEN:-}
+      - BB_EDGE_BASIC=${BB_EDGE_BASIC:-}
     depends_on:
       - app
     restart: unless-stopped

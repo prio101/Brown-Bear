@@ -34,9 +34,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    from brownbear.routers import health
+    from brownbear.routers import health, ollama_proxy
 
     app.include_router(health.router)
+    app.include_router(ollama_proxy.router)
 
     @app.get("/")
     async def root() -> dict:

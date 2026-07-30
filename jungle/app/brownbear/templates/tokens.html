@@ -1,0 +1,233 @@
+{% extends "base.html" %} {% block title %}Tokens · Brown Bear{% endblock %} {% block content %}
+<div class="page-head">
+  <h1>Token usage</h1>
+  <p>Closed periods come from the aggregates; the current period is read live.</p>
+</div>
+
+<!-- One filter row above everything it scopes; every card re-renders on the same slice. -->
+<div class="filters">
+  <label for="period">Period</label>
+  <select id="period">
+    <option value="hourly">Hourly</option>
+    <option value="daily" selected>Daily</option>
+    <option value="weekly">Weekly</option>
+    <option value="monthly">Monthly</option>
+  </select>
+  <label for="source">Source</label>
+  <select id="source">
+    <option value="">All sources</option>
+    <option value="local_ollama">Local (Ollama)</option>
+    <option value="remote_api">Remote API</option>
+  </select>
+  <a class="ghost-button" id="export-link" href="#" style="text-decoration: none">Export CSV</a>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat-label">Tokens in range</div>
+    <div class="hero-value" id="hero-tokens">—</div>
+    <div class="stat-note" id="hero-note">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Cost in range</div>
+    <div class="stat-value" id="stat-cost">—</div>
+    <div class="stat-note">Priced at write time</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Requests in range</div>
+    <div class="stat-value" id="stat-requests">—</div>
+    <div class="stat-note" id="stat-models">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Current period, live</div>
+    <div class="stat-value" id="stat-live">—</div>
+    <div class="stat-note" id="stat-live-note">Window still open</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card wide">
+    <div class="card-head"><h2>Tokens over time</h2></div>
+    <p class="sub" id="series-sub">Local inference versus paid remote APIs</p>
+    <div class="chart-wrap" id="tokens-chart"></div>
+    <div class="legend" id="tokens-legend"></div>
+    <div id="tokens-table"></div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-head"><h2>By model</h2></div>
+    <p class="sub">Total tokens per model over the range</p>
+    <div class="chart-wrap" id="model-chart"></div>
+    <div id="model-table"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>By source</h2></div>
+    <p class="sub">Where the tokens were spent</p>
+    <div class="chart-wrap" id="source-chart"></div>
+    <div id="source-table"></div>
+  </div>
+</div>
+
+<p class="footnote" id="agg-note">—</p>
+{% endblock %} {% block scripts %}
+<script>
+  // Colour follows the entity, never its rank: local is always slot 1 and
+  // remote always slot 2, so filtering never repaints the survivor.
+  const SOURCE_COLOR = { local_ollama: "--series-1", remote_api: "--series-2" };
+  const SOURCE_NAME = { local_ollama: "Local (Ollama)", remote_api: "Remote API" };
+
+  const periodEl = document.getElementById("period");
+  const sourceEl = document.getElementById("source");
+
+  function labelFor(period, iso) {
+    return period === "hourly" ? BB.fmtTime(iso) : BB.fmtDate(iso);
+  }
+
+  async function refresh() {
+    const period = periodEl.value;
+    const source = sourceEl.value;
+    const query = `period=${period}${source ? `&source=${source}` : ""}`;
+    const main = document.querySelector("main");
+    main.classList.add("stale");
+
+    document.getElementById("export-link").href =
+      `/api/export?dataset=token_periods&format=csv&period=${period}`;
+
+    try {
+      const [history, byModel, bySource, live, agg] = await Promise.all([
+        BB.get(`/api/tokens/history?${query}&limit=2000`),
+        BB.get(`/api/tokens/by-model?period=${period}`),
+        BB.get(`/api/tokens/by-source?period=${period}`),
+        BB.get(`/api/tokens/summary?period=${period}`),
+        BB.get("/api/tokens/aggregation?limit=1"),
+      ]);
+
+      const rows = history.results;
+      const totals = rows.reduce(
+        (acc, r) => {
+          acc.tokens += r.total_tokens;
+          acc.in += r.tokens_in;
+          acc.out += r.tokens_out;
+          acc.cost += r.cost;
+          acc.requests += r.request_count;
+          acc.models.add(r.model);
+          return acc;
+        },
+        { tokens: 0, in: 0, out: 0, cost: 0, requests: 0, models: new Set() }
+      );
+
+      document.getElementById("hero-tokens").textContent = BB.fmtCompact(totals.tokens);
+      document.getElementById("hero-note").textContent =
+        `${BB.fmtCompact(totals.in)} in · ${BB.fmtCompact(totals.out)} out`;
+      document.getElementById("stat-cost").textContent = BB.fmtMoney(totals.cost);
+      document.getElementById("stat-requests").textContent = totals.requests.toLocaleString();
+      document.getElementById("stat-models").textContent =
+        `${totals.models.size} model${totals.models.size === 1 ? "" : "s"}`;
+      document.getElementById("stat-live").textContent = BB.fmtCompact(live.total_tokens);
+      document.getElementById("stat-live-note").textContent =
+        `${live.request_count} request${live.request_count === 1 ? "" : "s"} · window open`;
+
+      // Pivot rows into one point per bucket per source.
+      const buckets = [...new Set(rows.map((r) => r.period_start))].sort();
+      const present = [...new Set(rows.map((r) => r.source))];
+      const series = present.map((key) => ({
+        name: SOURCE_NAME[key] || key,
+        color: SOURCE_COLOR[key] || "--series-3",
+        points: buckets.map((bucket) => ({
+          y: rows
+            .filter((r) => r.period_start === bucket && r.source === key)
+            .reduce((sum, r) => sum + r.total_tokens, 0),
+        })),
+      }));
+
+      document.getElementById("series-sub").textContent =
+        buckets.length
+          ? `${buckets.length} closed ${period} period${buckets.length === 1 ? "" : "s"}`
+          : "No closed periods in this range yet";
+
+      BB.lineChart(document.getElementById("tokens-chart"), {
+        series,
+        xLabels: buckets.map((b) => labelFor(period, b)),
+        area: series.length === 1,
+        ariaLabel: "Tokens over time by source",
+      });
+      // A legend is always present for two or more series; a single series
+      // needs none, since the card title already names it.
+      const legendEl = document.getElementById("tokens-legend");
+      if (series.length > 1) BB.legend(legendEl, series);
+      else legendEl.innerHTML = "";
+
+      BB.table(
+        document.getElementById("tokens-table"),
+        [
+          { label: "Period", render: (r) => labelFor(period, r.period_start) },
+          { label: "Model", key: "model" },
+          { label: "Source", render: (r) => SOURCE_NAME[r.source] || r.source },
+          { label: "In", num: true, render: (r) => r.tokens_in.toLocaleString() },
+          { label: "Out", num: true, render: (r) => r.tokens_out.toLocaleString() },
+          { label: "Total", num: true, render: (r) => r.total_tokens.toLocaleString() },
+          { label: "Cost", num: true, render: (r) => BB.fmtMoney(r.cost) },
+          { label: "Requests", num: true, render: (r) => r.request_count.toLocaleString() },
+        ],
+        rows.slice(0, 25)
+      );
+
+      // Nominal categories: one series, one colour. A darker-where-bigger ramp
+      // would double-encode bar length as hue.
+      BB.barChart(document.getElementById("model-chart"), {
+        bars: byModel.results.map((r) => ({ label: r.model, value: r.total_tokens })),
+        color: "--series-1",
+        seriesName: "Tokens",
+        ariaLabel: "Total tokens by model",
+      });
+      BB.table(
+        document.getElementById("model-table"),
+        [
+          { label: "Model", key: "model" },
+          { label: "Tokens", num: true, render: (r) => r.total_tokens.toLocaleString() },
+          { label: "Cost", num: true, render: (r) => BB.fmtMoney(r.cost) },
+          { label: "Requests", num: true, render: (r) => r.request_count.toLocaleString() },
+        ],
+        byModel.results
+      );
+
+      BB.barChart(document.getElementById("source-chart"), {
+        bars: bySource.results.map((r) => ({
+          label: SOURCE_NAME[r.source] || r.source,
+          value: r.total_tokens,
+        })),
+        color: "--series-1",
+        seriesName: "Tokens",
+        ariaLabel: "Total tokens by source",
+      });
+      BB.table(
+        document.getElementById("source-table"),
+        [
+          { label: "Source", render: (r) => SOURCE_NAME[r.source] || r.source },
+          { label: "Tokens", num: true, render: (r) => r.total_tokens.toLocaleString() },
+          { label: "Cost", num: true, render: (r) => BB.fmtMoney(r.cost) },
+          { label: "Requests", num: true, render: (r) => r.request_count.toLocaleString() },
+        ],
+        bySource.results
+      );
+
+      const latest = agg.latest_completed[period];
+      document.getElementById("agg-note").textContent = latest
+        ? `Newest aggregated ${period} window: ${new Date(latest).toLocaleString()}. The period in progress is excluded from the charts and shown live in the tile above.`
+        : `No ${period} window has been aggregated yet — only closed windows are aggregated.`;
+    } catch (error) {
+      console.error(error);
+    } finally {
+      main.classList.remove("stale");
+    }
+  }
+
+  periodEl.addEventListener("change", refresh);
+  sourceEl.addEventListener("change", refresh);
+  refresh();
+  setInterval(refresh, 30000);
+</script>
+{% endblock %}

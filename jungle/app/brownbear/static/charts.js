@@ -24,6 +24,20 @@ BB.fmtCompact = (value) => {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 };
 
+/**
+ * Axis tick formatter chosen once for the whole axis from its largest tick.
+ * Formatting each tick on its own magnitude mixes styles down one axis
+ * ("14K" sitting above "8,000"), which reads as two different scales.
+ */
+BB.axisFormatter = (maxTick) => {
+  const max = Math.abs(maxTick);
+  const scaled = (divisor, suffix) => (v) =>
+    v === 0 ? "0" : (v / divisor).toFixed(v % divisor === 0 ? 0 : 1) + suffix;
+  if (max >= 1e6) return scaled(1e6, "M");
+  if (max >= 1e4) return scaled(1e3, "K");
+  return (v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+
 BB.fmtBytes = (bytes) => {
   if (!bytes && bytes !== 0) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -139,6 +153,8 @@ BB.lineChart = function lineChart(wrap, spec) {
     const xAt = (i) => pad.left + (count === 1 ? plotW / 2 : (plotW * i) / (count - 1));
     const yAt = (v) => pad.top + plotH - ((v - yMin) / (top - yMin || 1)) * plotH;
 
+    const tickFormat = spec.yFormat || BB.axisFormatter(top);
+
     // Gridlines: hairline, solid, recessive. Horizontal only.
     for (const tick of ticks) {
       const y = yAt(tick);
@@ -150,7 +166,7 @@ BB.lineChart = function lineChart(wrap, spec) {
         x: pad.left - 8, y: y + 4, "text-anchor": "end",
         fill: cssVar("--text-muted"), "font-size": 11,
         style: "font-variant-numeric: tabular-nums",
-      }, svg).textContent = (spec.yFormat || BB.fmtCompact)(tick);
+      }, svg).textContent = tickFormat(tick);
     }
 
     el("line", {

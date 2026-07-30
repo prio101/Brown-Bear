@@ -29,5 +29,9 @@ def overview(request: Request) -> HTMLResponse:
     return _page(request, "overview.html", "overview")
 
 
-# Remaining pages are added as each one lands: /tokens, /cache, /collections,
-# /settings.
+@router.get("/tokens", response_class=HTMLResponse)
+def tokens(request: Request) -> HTMLResponse:
+    return _page(request, "tokens.html", "tokens")
+
+
+# Remaining pages are added as each one lands: /cache, /collections, /settings.

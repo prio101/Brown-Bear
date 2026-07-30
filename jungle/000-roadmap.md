@@ -10,7 +10,7 @@
 
 Turn Brown Bear from an infrastructure-only stack (`compose.yaml`) into a running Python application that monitors, meters, exposes, and maintains the local AI stack.
 
-**Current state:** 7 containers running. Phase 0 complete, Phase 1 complete except M8.
+**Current state:** 7 containers running. Phases 0 and 2 complete; Phase 1 complete except M8.
 
 ---
 
@@ -23,10 +23,14 @@ reports live status for Ollama, ChromaDB, Redis and PostgreSQL.
 correct counts and cost, and the closed window it belongs to produces a matching
 `token_periods` row.
 
-| Done | Remaining in Phase 1 |
+**Milestone 2 — met.** The dashboard renders live health for every service and accurate
+historical token charts; `/metrics` scrapes clean.
+
+| Done | Remaining |
 |---|---|
 | F1–F9 | — |
 | M1–M7 | M8 (remote webhook + provider SDK wrappers) |
+| D1t–D9t | Alert *evaluation* (H2) — thresholds are stored and editable, nothing fires yet |
 
 Verified against the running stack: token counts match Ollama's own `prompt_eval_count` /
 `eval_count`; `gpt-4` at 1000 in / 500 out prices to exactly $0.06; a replayed `request_id`
@@ -42,10 +46,21 @@ insert the event.
 
 ```bash
 docker compose up -d                    # whole stack incl. the app on :8080
+open http://localhost:8080              # dashboard
 curl localhost:8080/api/health          # all four services
+curl localhost:8080/metrics             # Prometheus exposition format
 docker compose run --rm app alembic upgrade head
 docker build --target dev -t brownbear-dev jungle/app && docker run --rm brownbear-dev
 ```
+
+**Phase 2 scoping calls**, each recorded in spec 001 where it applies:
+- `system_snapshots` is **host-scoped**. Per-container statistics require mounting the Docker
+  socket into the app, which is root-equivalent host access — not worth it for a resource gauge.
+- `cache_events` became `cache_samples`. An event-shaped table presumes the app proxies Redis
+  traffic; it does not, so it samples cumulative counters and derives rates from deltas.
+- Charts are hand-rolled inline SVG, not Chart.js or Plotly: no internet means no CDN, and
+  vendoring a charting bundle would dwarf the dashboard.
+- Alert thresholds are stored and editable but nothing evaluates them; that is H2.
 
 **Two findings that change the specs as written:**
 

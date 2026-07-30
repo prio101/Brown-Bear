@@ -52,13 +52,19 @@ dashboard, tracker, maintenance and gateway routers of one app, not four service
 - [x] Configure environment variables (database URLs, API keys, service endpoints)
 
 ### 1.2 — Database & Models
-- [ ] Design SQLite/PostgreSQL schema for analytics tables:
-  - `token_usage` (model, tokens_in, tokens_out, session_id, timestamp, source: local|remote)
-  - `query_logs` (collection, query_text, latency_ms, result_count, timestamp)
-  - `cache_events` (hit/miss, key_pattern, timestamp)
-  - `system_snapshots` (cpu, memory, disk, timestamp)
-- [ ] Create SQLAlchemy models and Alembic migrations
-- [ ] Seed database with test data
+PostgreSQL only (roadmap D2): SQLite cannot serve a concurrent scheduler and API writer.
+- [x] Analytics schema:
+  - ~~`token_usage`~~ — superseded by spec 003's `token_events` / `token_periods` (roadmap D1)
+  - `query_logs` (collection, query_text, latency_ms, result_count, timestamp) — created,
+    stays empty until spec 002's `/ext/query`
+  - `cache_samples` — replaces `cache_events`. An event-shaped table presumes the app sits in
+    the path of Redis traffic; it does not. Redis exposes cumulative counters, so the honest
+    shape is a periodic sample with rates derived from deltas.
+  - `system_snapshots` (cpu, memory, disk, timestamp) — **host-scoped**, not per-container.
+    Per-container stats need the Docker socket mounted in, which is root-equivalent host access.
+- [x] Create SQLAlchemy models and Alembic migrations
+- [ ] Seed database with test data — deliberately not done. Seeded rows in the same tables the
+      dashboard reports on would misstate real usage; verification data was removed after each run.
 
 ### 1.3 — Service Connectors
 - [x] Ollama connector — poll `/api/tags` and `/api/ps` for model stats
@@ -68,30 +74,40 @@ dashboard, tracker, maintenance and gateway routers of one app, not four service
 - [x] PostgreSQL connector — connection pool stats
 
 ### 1.4 — Background Collector
-- [ ] Background task ( APScheduler or asyncio ) that periodically:
-  - Polls all service health endpoints
-  - Records system snapshots every 30s
-  - Aggregates token usage counters every 5min
-- [ ] Store collected metrics in analytics database
+- [x] APScheduler jobs that periodically:
+  - Sample Redis counters (30s, configurable)
+  - Record system snapshots every 30s (configurable)
+  - Aggregate token usage — **hourly, not every 5 minutes**: the smallest bucket is an hour, so
+    a 5-minute job would re-run the same window twelve times to no effect
+  - Prune monitoring rows daily (added: at 30s these tables grow ~5,800 rows/day each)
+- [x] Store collected metrics in the analytics database
 
 ### 1.5 — API Endpoints
 - [x] `GET /api/health` — system health summary (plus `/api/health/live` for liveness)
-- [ ] `GET /api/tokens` — token usage with filters (model, period, source)
-- [ ] `GET /api/cache` — cache performance stats
-- [ ] `GET /api/collections` — ChromaDB collection overview
-- [ ] `GET /api/metrics` — Prometheus-compatible `/metrics` endpoint
-- [ ] `GET /api/export` — CSV/JSON export of analytics
+- [x] `GET /api/tokens/*` — usage with filters (model, period, source); see spec 003 §3.6
+- [x] `GET /api/cache` — cache performance stats (window deltas + per-interval series)
+- [x] `GET /api/collections` — ChromaDB collection overview
+- [x] `GET /api/system` — host resource series (added; the dashboard needs it)
+- [x] `GET /api/metrics` and `/metrics` — Prometheus exposition format
+- [x] `GET /api/export` — streaming CSV/JSON export
 
 ### 1.6 — Dashboard UI
-- [ ] Build responsive admin dashboard (FastAPI + Jinja2 + HTMX or standalone React)
-- [ ] Overview page: service health cards, key metrics at a glance
-- [ ] Token usage page: interactive charts (Chart.js or Plotly)
-- [ ] Cache analytics page: hit/miss graphs, memory usage
-- [ ] Collections page: ChromaDB document counts, storage, query volume
-- [ ] Settings page: configure polling intervals, alert thresholds
+Jinja2 shells plus hand-rolled inline-SVG charts — **not Chart.js or Plotly**. This stack is
+built to run without internet, so a CDN tag is out and vendoring a charting bundle would dwarf
+the dashboard. Every page reads the same JSON API any other client uses.
+- [x] Responsive dashboard, light and dark, no external assets
+- [x] Overview page: service health cards, key metrics at a glance
+- [x] Token usage page: interactive charts with crosshair, tooltip and keyboard navigation
+- [x] Cache analytics page: hit/miss graphs, memory usage
+- [x] Collections page: ChromaDB document counts
+- [x] Settings page: polling intervals (applied live) and alert thresholds (stored for §1.7)
+
+Colour follows the validated reference palette, run through the validator all-pairs in both
+modes. Every chart carries a legend and a table twin, so no value is reachable by hover alone.
 
 ### 1.7 — Alerting (Optional)
-- [ ] Configurable thresholds (e.g., token budget exceeded, cache hit rate drops below X%)
+- [x] Configurable thresholds — daily cost budget, cache hit rate floor, disk ceiling; stored
+      and editable, but **nothing evaluates them yet**. The settings page says so explicitly.
 - [ ] Alert via webhook, email, or log
 - [ ] Alert history and acknowledgment
 

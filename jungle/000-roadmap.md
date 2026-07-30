@@ -119,6 +119,10 @@ Two more choices worth locking now: **APScheduler** as the single scheduler (fou
 
 **Why this order.** Metering (003) precedes the dashboard (001) because 001's headline feature is token analytics — building the UI first means building it against empty tables. The dashboard precedes 002 and 004 because both terminate in dashboard pages (§2.6, §4.8). The gateway (002) is last of the feature phases because it is the only one that exposes the stack to the internet, and it should not go live until auth, rate limiting, and audit logging have a working dashboard to be observed through.
 
+> **Reordered 2026-07-30.** The intended use of this stack is now written down in **spec 005 — Context Gateway & Semantic Cache**: an external machine asks Brown Bear for a cached answer and retrieved context before every Claude request, over the Cloudflare tunnel. That makes **002 the next phase rather than the last**, and makes 003's **M8 mandatory** — the client calls Anthropic, so usage must be reported rather than captured. Phase 3 (maintenance) moves behind it.
+>
+> Three things gate all of it: **Ollama has no embeddings enabled**, **ChromaDB is empty**, and **the app has no authentication of any kind**. The auth gap is the urgent one — tunnelling port 8080 as it stands would expose `PUT /api/settings` and the `/ollama/*` proxy to the internet.
+
 ---
 
 ## Phase 0 — Foundation

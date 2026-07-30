@@ -144,9 +144,47 @@ A cache that returns a confidently wrong answer is worse than no cache. Non-nego
 - [ ] Unknown-price handling for remote models
 
 ### 5.6 — Tunnel and auth (spec 002 §2.1–2.3)
-- [ ] `cloudflared` service, credentials in a volume, auto-reconnect
-- [ ] API-key middleware over every `/ext` and `/api` route
+- [x] `cloudflared` service, profile-gated so nothing publishes by accident
+- [x] Default-deny edge allowlist (`edge/nginx.conf`) as the tunnel's origin
+- [ ] API-key middleware over every `/ext` and `/api` route — **deferred by decision**
 - [ ] Rate limiting, audit log
+
+#### What is exposed today
+
+The tunnel points at `edge:8081`, never at `app:8080`. The edge default-denies and forwards
+exactly two things:
+
+| Path | Why it is safe without auth |
+|---|---|
+| `GET /api/health/live` | Returns `{"status":"ok"}` and nothing else |
+| `/ext/*` | The gateway surface. Does not exist yet, so it 404s today |
+
+Everything else — `/api/settings`, `/api/tokens/*`, `/api/export`, `/metrics`, the dashboard,
+and the whole `/ollama/*` proxy — returns 403 at the edge. Verified: a `PUT /api/settings`
+through the edge is refused and the setting is unchanged.
+
+**This is containment, not authentication.** Anyone who learns the hostname can call the
+allowed paths. That is acceptable while the only allowed path is a liveness probe. It stops
+being acceptable the moment `/ext/*` carries prompts and returns retrieved context — so
+§2.3's API keys must land with 5.4, not after.
+
+#### Runbook
+
+Persistent tunnel (survives restarts, stable hostname):
+
+1. In the Cloudflare Zero Trust dashboard: **Networks → Tunnels → Create a tunnel**
+2. Copy the token into `.env` as `CLOUDFLARE_TUNNEL_TOKEN`
+3. Add a public hostname routed to **`http://edge:8081`** — not `app:8080`
+4. `docker compose --profile tunnel up -d`
+
+Throwaway tunnel (no account, random URL, gone on stop):
+
+```bash
+docker compose --profile quicktunnel up -d
+docker compose logs cloudflared-quick | grep trycloudflare.com   # the URL
+```
+
+Neither profile starts with a plain `docker compose up`.
 
 ### 5.7 — Dashboard
 - [ ] Cache hit rate, tokens saved, and near-miss list

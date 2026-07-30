@@ -23,6 +23,57 @@ services:
       - redis
     restart: unless-stopped
 
+  # ==================== EDGE (the tunnel's origin) ====================
+  # Default-deny allowlist in front of the app. The tunnel points here, never
+  # at app:8080, so the allowlist holds even for a quick tunnel — which cannot
+  # filter paths itself. See edge/nginx.conf.
+  # Bound to loopback so it is testable locally without joining the LAN.
+  edge:
+    image: nginx:1.27-alpine
+    container_name: brownbear-edge
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - ./edge/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./edge/proxy_common.conf:/etc/nginx/proxy_common.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  # ==================== CLOUDFLARE TUNNEL ====================
+  # Both tunnel services sit behind compose profiles, so neither starts with a
+  # plain `docker compose up` — nothing gets published by accident.
+  #
+  # Persistent, named tunnel (recommended). Create it in the Cloudflare
+  # dashboard, set the token in .env, point its public hostname at
+  # http://edge:8081, then:  docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      # Defaulted rather than required: compose interpolates the whole file on
+      # every command, so a `:?` guard here would break `docker compose up`
+      # even when this profile is not selected. cloudflared reports a missing
+      # token clearly enough on its own.
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - edge
+    restart: unless-stopped
+
+  # Throwaway tunnel for testing: no account, random *.trycloudflare.com URL,
+  # gone when the container stops. The URL is printed in its logs.
+  #   docker compose --profile quicktunnel up -d && docker compose logs -f cloudflared-quick
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-quick
+    profiles: ["quicktunnel"]
+    command: tunnel --no-autoupdate --url http://edge:8081
+    depends_on:
+      - edge
+    restart: "no"
+
   ollama:
     image: ollama/ollama:latest
     container_name: ollama

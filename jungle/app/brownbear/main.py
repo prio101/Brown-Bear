@@ -9,11 +9,15 @@ Routers are mounted here as each spec lands:
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from brownbear import __version__
 from brownbear.config import get_settings
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
@@ -37,7 +41,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    from brownbear.routers import export, health, metrics, monitoring, ollama_proxy, tokens
+    from brownbear.routers import (
+        export,
+        health,
+        metrics,
+        monitoring,
+        ollama_proxy,
+        tokens,
+        ui,
+    )
+
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(health.router)
     app.include_router(tokens.router)
@@ -45,9 +59,11 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router)
     app.include_router(export.router)
     app.include_router(ollama_proxy.router)
+    # Last: the UI owns "/", which the API used to serve.
+    app.include_router(ui.router)
 
-    @app.get("/")
-    async def root() -> dict:
+    @app.get("/api/info")
+    async def info() -> dict:
         return {"name": settings.app_name, "version": __version__}
 
     return app

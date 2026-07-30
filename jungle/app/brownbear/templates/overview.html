@@ -1,0 +1,138 @@
+{% extends "base.html" %} {% block title %}Overview · Brown Bear{% endblock %} {% block content %}
+<div class="page-head">
+  <h1>Overview</h1>
+  <p>Live status of the stack and today's usage.</p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="stat-label">Tokens today</div>
+    <div class="hero-value" id="hero-tokens">—</div>
+    <div class="stat-note" id="hero-note">UTC day, in progress</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Cost today</div>
+    <div class="stat-value" id="stat-cost">—</div>
+    <div class="stat-note">Local models price at zero</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Requests today</div>
+    <div class="stat-value" id="stat-requests">—</div>
+    <div class="stat-note" id="stat-split">—</div>
+  </div>
+  <div class="card">
+    <div class="stat-label">Services up</div>
+    <div class="stat-value" id="stat-services">—</div>
+    <div class="stat-note">Ollama, ChromaDB, Redis, PostgreSQL</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-head"><h2>Service health</h2></div>
+    <p class="sub">Probed live on each refresh.</p>
+    <div class="service-list" id="services"><p class="empty">Checking…</p></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Host resources</h2></div>
+    <p class="sub" id="system-sub">Last hour · host-scoped, not per-container</p>
+    <div class="chart-wrap" id="system-chart"></div>
+    <div class="legend" id="system-legend"></div>
+    <div id="system-table"></div>
+  </div>
+</div>
+
+<p class="footnote">
+  Resource figures are host-scoped. Per-container statistics would require mounting the Docker
+  socket into this app, which grants root-equivalent access to the host.
+</p>
+{% endblock %} {% block scripts %}
+<script>
+  const SYSTEM_SERIES = [
+    { name: "CPU", color: "--series-1", key: "cpu_percent" },
+    { name: "Memory", color: "--series-2", key: "memory_percent" },
+    { name: "Disk", color: "--series-3", key: "disk_percent" },
+  ];
+
+  function statusIcon(ok) {
+    // Icon + label always accompany the colour, so status never reads by hue alone.
+    const color = ok ? "var(--status-good)" : "var(--status-critical)";
+    const glyph = ok
+      ? '<path d="M4 8.5l2.5 2.5L12 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+      : '<path d="M8 4.5v4.2M8 11.4v.1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    return `<svg class="status-icon" viewBox="0 0 16 16" style="color:${color}" aria-hidden="true">
+        <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>${glyph}</svg>`;
+  }
+
+  async function refresh() {
+    const main = document.querySelector("main");
+    main.classList.add("stale"); // hold the previous render rather than flashing
+
+    try {
+      const [health, summary, system] = await Promise.all([
+        BB.get("/api/health"),
+        BB.get("/api/tokens/summary?period=daily"),
+        BB.get("/api/system?minutes=60"),
+      ]);
+
+      document.getElementById("hero-tokens").textContent = BB.fmtCompact(summary.total_tokens);
+      document.getElementById("hero-note").textContent =
+        `${BB.fmtCompact(summary.tokens_in)} in · ${BB.fmtCompact(summary.tokens_out)} out`;
+      document.getElementById("stat-cost").textContent = BB.fmtMoney(summary.cost);
+      document.getElementById("stat-requests").textContent = summary.request_count.toLocaleString();
+      document.getElementById("stat-split").textContent = "UTC day, in progress";
+
+      const services = Object.values(health.services);
+      const up = services.filter((s) => s.healthy).length;
+      document.getElementById("stat-services").textContent = `${up} / ${services.length}`;
+
+      document.getElementById("services").innerHTML = services
+        .map(
+          (s) => `<div class="service">
+            <span class="status-pill">${statusIcon(s.healthy)}${s.name}</span>
+            <span class="service-meta">${
+              s.healthy ? `${s.latency_ms} ms` : s.error || "unreachable"
+            }</span>
+          </div>`
+        )
+        .join("");
+
+      const points = system.series;
+      document.getElementById("system-sub").textContent =
+        `Last hour · ${system.samples} samples · host-scoped`;
+
+      BB.lineChart(document.getElementById("system-chart"), {
+        series: SYSTEM_SERIES.map((s) => ({
+          name: s.name,
+          color: s.color,
+          points: points.map((p) => ({ y: p[s.key] })),
+        })),
+        xLabels: points.map((p) => BB.fmtTime(p.timestamp)),
+        yFormat: (v) => `${v}%`,
+        valueFormat: (v) => `${v.toFixed(1)}%`,
+        yMax: 100,
+        ariaLabel: "Host CPU, memory and disk utilisation over the last hour",
+      });
+      BB.legend(document.getElementById("system-legend"), SYSTEM_SERIES);
+      BB.table(
+        document.getElementById("system-table"),
+        [
+          { label: "Time", render: (r) => BB.fmtTime(r.timestamp) },
+          { label: "CPU", num: true, render: (r) => `${r.cpu_percent.toFixed(1)}%` },
+          { label: "Memory", num: true, render: (r) => `${r.memory_percent.toFixed(1)}%` },
+          { label: "Disk", num: true, render: (r) => `${r.disk_percent.toFixed(1)}%` },
+        ],
+        points.slice(-8).reverse()
+      );
+    } catch (error) {
+      console.error(error);
+    } finally {
+      main.classList.remove("stale");
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 15000);
+</script>
+{% endblock %}

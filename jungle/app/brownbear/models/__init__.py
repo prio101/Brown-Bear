@@ -5,6 +5,7 @@ Alembic's autogenerate depends on it. Add each new model module here.
 """
 
 from brownbear.models.aggregation import AggregationRun, RunStatus
+from brownbear.models.monitoring import CacheSample, QueryLog, SystemSnapshot
 from brownbear.models.tokens import (
     ModelPricing,
     PeriodType,
@@ -15,9 +16,12 @@ from brownbear.models.tokens import (
 
 __all__ = [
     "AggregationRun",
+    "CacheSample",
     "ModelPricing",
     "PeriodType",
+    "QueryLog",
     "RunStatus",
+    "SystemSnapshot",
     "TokenEvent",
     "TokenPeriod",
     "TokenSource",

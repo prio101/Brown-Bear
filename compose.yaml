@@ -16,6 +16,11 @@ services:
       - BB_OLLAMA_URL=http://ollama:11434
       - BB_CHROMA_URL=http://chromadb:8000
       - BB_REDIS_URL=redis://:your_strong_password@redis:6379/0
+    volumes:
+      # BB-109: the public design book. Mounted read-only rather than baked into
+      # the image so editing a document publishes it without a rebuild — a stale
+      # published book is worse than none. Read-only: the app never writes here.
+      - ./jungle/dev/design:/app/brownbear/design:ro
     depends_on:
       - postgres
       - ollama

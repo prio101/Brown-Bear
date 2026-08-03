@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     )
 
     from brownbear.routers import (
+        design,
         export,
         ext,
         health,
@@ -63,6 +64,9 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(ext.router)
     app.include_router(ollama_proxy.router)
+    # Public, unauthenticated at the edge (BB-109). Mounted before the UI, which
+    # owns "/".
+    app.include_router(design.router)
     # Last: the UI owns "/", which the API used to serve.
     app.include_router(ui.router)
 

@@ -90,6 +90,29 @@ server {
         include /etc/nginx/proxy_timeouts.conf;
     }
 
+    # ---- public: design book (BB-109) -------------------------------------
+    # The only unauthenticated route besides the liveness probe. It serves two
+    # static Markdown documents rendered from a read-only mount and touches no
+    # database, gateway or setting — so it publishes design values and nothing
+    # about this instance, and cannot be used to probe whether the stack is up.
+    #
+    # Exact match plus a trailing-slash prefix, deliberately: a bare
+    # `location /design` would also match /designsomething, which belongs in the
+    # default deny.
+    location = /design {
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/design;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    location /design/ {
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/design/;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
     # ---- authenticated: context gateway (spec 005) ------------------------
     # Prompts in, cached answers and retrieved context out. Never public: this
     # carries the content of what is being asked.

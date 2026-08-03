@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     app_name: str = "Brown Bear"
     debug: bool = False
 
+    # --- public design book (BB-109) ---
+    # Mounted read-only from jungle/dev/design rather than baked into the image,
+    # so an edited document publishes without a rebuild. An absent directory
+    # degrades the route to 404; it never breaks startup.
+    design_dir: str = "/app/brownbear/design"
+
     # --- backing services (in-network names, not localhost) ---
     # Roadmap D3: a dedicated `brownbear` database, never VectorAdmin's `vdbms`.
     database_url: str = (

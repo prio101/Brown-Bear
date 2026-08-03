@@ -155,14 +155,20 @@ export const TokenHistorySchema = z.object({
   // True means the series was capped. A chart drawn from a truncated series
   // without saying so is lying, so this must not be swallowed.
   truncated: z.boolean(),
+  // One row per (period, model, source) — NOT one row per period. Building a time
+  // series from this requires grouping by period_start first; treating each row as
+  // a point plots the same instant several times.
   results: z.array(
     z.object({
       period_start: Timestamp,
-      tokens_in: z.number().optional(),
-      tokens_out: z.number().optional(),
-      total_tokens: z.number().optional(),
-      cost: z.number().optional(),
-      request_count: z.number().optional(),
+      period_end: Timestamp,
+      model: z.string(),
+      source: z.string(),
+      tokens_in: z.number(),
+      tokens_out: z.number(),
+      total_tokens: z.number(),
+      cost: z.number(),
+      request_count: z.number(),
     }),
   ),
 });

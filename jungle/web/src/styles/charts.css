@@ -1,0 +1,101 @@
+/* Chart chrome (BB-106).
+ *
+ * Charts render on the FIXED chart surface, never the themed one: the series
+ * palette is validated for contrast against those exact surfaces, so a tinted
+ * chart surface would invalidate the validation (DESIGN-BOOK.md §2.2).
+ */
+
+.bb-chart-figure {
+  margin: 0;
+  display: grid;
+  gap: var(--bb-space-3);
+  background: var(--bb-chart-surface);
+  border: 1px solid var(--bb-hairline);
+  border-radius: var(--bb-radius-md);
+  padding: var(--bb-space-4);
+  /* The chart surface is fixed, so ink tokens must be too — otherwise chart text
+   * would inherit theme colours picked for a different background. */
+  color: var(--bb-ink);
+}
+
+.bb-chart-plot {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--bb-radius-xs);
+}
+
+.bb-chart-plot:focus-visible {
+  outline: 3px solid var(--bb-primary);
+  outline-offset: 2px;
+}
+
+.bb-chart-summary {
+  cursor: pointer;
+  color: var(--bb-ink-2);
+  padding: var(--bb-space-2) 0;
+  min-height: var(--bb-touch-target);
+  display: flex;
+  align-items: center;
+}
+
+/* --- tooltip --- */
+
+.bb-tooltip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--bb-chart-surface);
+  border: 1px solid var(--bb-axis);
+  border-radius: var(--bb-radius-sm);
+  box-shadow: var(--bb-elevation-3);
+  padding: var(--bb-space-2) var(--bb-space-3);
+  min-width: 160px;
+  color: var(--bb-ink);
+}
+
+.bb-tooltip-title {
+  margin: 0 0 var(--bb-space-1);
+  color: var(--bb-ink-2);
+}
+
+.bb-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--bb-space-4);
+  align-items: center;
+}
+
+.bb-tooltip-key {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--bb-radius-xs);
+  display: inline-block;
+}
+
+/* --- table twin --- */
+
+.bb-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--bb-ink);
+}
+
+.bb-table th,
+.bb-table td {
+  border-bottom: 1px solid var(--bb-gridline);
+  padding: var(--bb-space-2) var(--bb-space-3);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bb-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bb-chart-surface);
+  color: var(--bb-ink);
+}
+
+.bb-table .bb-num {
+  text-align: right;
+}

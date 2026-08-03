@@ -66,6 +66,9 @@
   --bb-gutter-compact: 16px;
   --bb-gutter-expanded: 24px;
   --bb-touch-target: 48px;
+  /* Icon glyphs are not type: they scale with the 24dp M3 icon size, not with a
+   * type role, so they get their own token rather than borrowing a font-size. */
+  --bb-icon-size: 24px;
 }
 
 /* Breakpoints are documented here rather than tokenised: custom properties

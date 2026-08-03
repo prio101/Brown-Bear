@@ -46,8 +46,15 @@ const RULES = [
   {
     name: "raw font-size",
     allowed: FONT_SIZE_ALLOWED,
-    pattern: /font-size\s*:\s*[^v;}]|fontSize\s*:\s*["'{]/g,
-    hint: "use a type-scale class or <Text role=…>",
+    // Capture the value and test it, rather than trying to exclude "var(" inside
+    // the pattern: `\s*` backtracks, so a negative character class after it
+    // happily matches the space and the declaration slips through.
+    pattern: /font-size\s*:\s*([^;}]+)|fontSize\s*:\s*([^,}]+)/g,
+    hint: "use a type-scale class, <Text role=…>, or a var(--bb-*) token",
+    filter: (match) => {
+      const value = (match[1] ?? match[2] ?? "").trim();
+      return !value.startsWith("var(");
+    },
   },
   {
     name: "off-grid length",

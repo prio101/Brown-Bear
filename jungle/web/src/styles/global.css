@@ -9,6 +9,7 @@
 @import "./chart-tokens.css";
 @import "./type.css";
 @import "./interaction.css";
+@import "./nav.css";
 
 *,
 *::before,

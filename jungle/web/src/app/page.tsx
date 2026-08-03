@@ -1,191 +1,310 @@
-import { Text, type TypeRole } from "@/components/Text";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { APP_NAME } from "@/lib/config";
+import { LivenessBanner, type LivenessState } from "@/components/LivenessBanner";
+import { Nav } from "@/components/Nav";
+import { Panel, PanelBody } from "@/components/Panel";
+import { ProvenanceBadge } from "@/components/ProvenanceBadge";
+import { StatTile } from "@/components/StatTile";
+import { StatusChip } from "@/components/StatusChip";
+import { Text } from "@/components/Text";
+import {
+  getCache,
+  getExtHealth,
+  getHealth,
+  getSystem,
+  getTokenSummary,
+  getTokensBySource,
+} from "@/lib/api/endpoints";
+import { staleness } from "@/lib/api/freshness";
+import { all, toPanelState } from "@/lib/api/panel";
+import { provenanceOf, weakestProvenance } from "@/lib/api/provenance";
+import { bytes, count, money, percent, rate } from "@/lib/format";
 
 /**
- * Token reference page (BB-102).
+ * Overview (BB-105).
  *
- * Still a placeholder route as far as the sprint is concerned — no data, no
- * dashboard. It exists so the token layer is visually verifiable in both modes
- * before any page is built on it, which is cheaper than discovering a wrong
- * value in BB-106. BB-105 replaces this with the real overview.
+ * The page's job is not to show numbers — it is to make "everything is fine" and
+ * "you have been silently disconnected for two days" impossible to confuse. The
+ * banner does that work; the tiles are the easy part.
  */
 
-const TYPE_ROLES: readonly TypeRole[] = [
-  "display-large", "display-medium", "display-small",
-  "headline-large", "headline-medium", "headline-small",
-  "title-large", "title-medium", "title-small",
-  "body-large", "body-medium", "body-small",
-  "label-large", "label-medium", "label-small",
-];
+/** Host snapshots are collected every 30s (BB_SNAPSHOT_INTERVAL_SECONDS). */
+const SNAPSHOT_INTERVAL_MS = 30_000;
 
-const SERIES = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+const listReset = { listStyle: "none", margin: 0, padding: 0 } as const;
+const row = { display: "flex", justifyContent: "space-between", gap: "var(--bb-space-3)" } as const;
 
-const STATUS = [
-  { role: "good", label: "Good" },
-  { role: "warning", label: "Warning" },
-  { role: "serious", label: "Serious" },
-  { role: "critical", label: "Critical" },
-] as const;
+export default async function Overview() {
+  // Concurrent: six sequential server-side calls would make the page as slow as
+  // their sum, and every result is independent.
+  const [health, system, cache, summary, bySource, gateway] = await all([
+    getHealth(),
+    getSystem(60),
+    getCache(60),
+    getTokenSummary("daily"),
+    getTokensBySource("daily"),
+    getExtHealth(),
+  ]);
 
-const card = {
-  background: "var(--bb-surface-container-low)",
-  border: "1px solid var(--bb-outline-variant)",
-  borderRadius: "var(--bb-radius-md)",
-  boxShadow: "var(--bb-elevation-1)",
-  padding: "var(--bb-space-6)",
-  marginBottom: "var(--bb-space-8)",
-} as const;
+  /* --- liveness ----------------------------------------------------------
+   * Derived from the collector's own freshness, not from whether the page
+   * rendered. A page full of zeroes renders perfectly well when the collector
+   * has been dead since Tuesday, which is the failure this resolves. */
+  let liveness: LivenessState = "healthy";
+  let lastWorked: Date | null = null;
+  let affected = "";
+  let nextStep = "";
 
-export default function Home() {
+  if (!system.ok) {
+    liveness = "unreachable";
+    affected = "Host metrics, and every number derived from them.";
+    nextStep = "Check that brownbear-app is running.";
+  } else if (system.data.current === null || system.data.samples === 0) {
+    liveness = "unknown";
+    affected = "Host metrics have never been collected on this instance.";
+    nextStep = "The collector runs every 30s — give it a minute, then reload.";
+  } else {
+    lastWorked = new Date(system.data.current.timestamp);
+    const grade = staleness(lastWorked, SNAPSHOT_INTERVAL_MS);
+    if (grade !== "fresh") {
+      liveness = grade === "stale" ? "stale" : "unreachable";
+      affected = "Every number on this page is as old as the last snapshot.";
+      nextStep = "Check the scheduler inside brownbear-app.";
+    }
+  }
+
+  /* --- provenance of the token totals ------------------------------------
+   * A total that adds a remote client's claim to a locally measured count is only
+   * as good as the claim, so compute the weakest kind from the sources actually
+   * present rather than assuming one. */
+  const presentSources = bySource.ok
+    ? bySource.data.results.map((result) => provenanceOf(result.source))
+    : [];
+  const totalsProvenance = weakestProvenance(presentSources);
+  const mixesTrust = new Set(presentSources).size > 1;
+
+  const healthState = toPanelState(
+    health,
+    (data) => Object.keys(data.services).length === 0,
+    "No services are configured.",
+  );
+  const gatewayState = toPanelState(gateway, () => false, "");
+  const cacheState = toPanelState(
+    cache,
+    (data) => data.samples === 0 || data.current === null,
+    "No cache samples have been collected yet.",
+  );
+  const systemState = toPanelState(system, (data) => data.current === null, "No host snapshots yet.");
+
   return (
-    <main className="bb-page">
-      <header
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "var(--bb-space-4)",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: "var(--bb-space-8)",
-        }}
-      >
-        <div>
+    <div className="bb-shell">
+      <Nav current="/" />
+      <main className="bb-page">
+        <header style={{ marginBottom: "var(--bb-space-6)" }}>
           <Text role="headline-medium" as="h1">
-            {APP_NAME} — design tokens
+            Overview
           </Text>
-          <Text role="body-medium" style={{ color: "var(--bb-on-surface-variant)" }}>
-            Material Design 3 theme generated from one brown seed. Charts keep their own
-            fixed, validated palette — a reseed cannot repaint a series.
-          </Text>
-        </div>
-        <ThemeToggle />
-      </header>
+        </header>
 
-      <section style={card}>
-        <Text role="title-medium" as="h2">Type scale</Text>
-        <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)", marginBottom: "var(--bb-space-4)" }}>
-          Fifteen roles. There is no sixteenth.
-        </Text>
-        {TYPE_ROLES.map((role) => (
-          <div key={role} style={{ marginBottom: "var(--bb-space-2)" }}>
-            <Text role={role}>{role}</Text>
-          </div>
-        ))}
-      </section>
+        <LivenessBanner
+          state={liveness}
+          affected={affected}
+          lastWorked={lastWorked}
+          nextStep={nextStep}
+        />
 
-      <section style={card}>
-        <Text role="title-medium" as="h2">Theme roles</Text>
-        <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)", marginBottom: "var(--bb-space-4)" }}>
-          Generated. A reseed changes these and nothing below.
-        </Text>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--bb-space-2)" }}>
-          {(["primary", "secondary", "tertiary", "error"] as const).map((role) => (
-            <div
-              key={role}
-              className="bb-label-large"
-              style={{
-                background: `var(--bb-${role})`,
-                color: `var(--bb-on-${role})`,
-                padding: "var(--bb-space-3) var(--bb-space-4)",
-                borderRadius: "var(--bb-radius-sm)",
-                minWidth: "120px",
-              }}
-            >
-              {role}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section style={card}>
-        <Text role="title-medium" as="h2">Chart series — fixed slot order</Text>
-        <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)", marginBottom: "var(--bb-space-4)" }}>
-          Never cycled. Color follows the entity, not its rank. Validated 2026-08-03.
-        </Text>
-        <div style={{ display: "flex", gap: "2px", background: "var(--bb-chart-surface)", padding: "var(--bb-space-3)", borderRadius: "var(--bb-radius-sm)" }}>
-          {SERIES.map((slot) => (
-            <div key={slot} style={{ flex: 1, textAlign: "center" }}>
-              <div
-                style={{
-                  height: "48px",
-                  background: `var(--bb-series-${slot})`,
-                  borderRadius: "var(--bb-radius-xs) var(--bb-radius-xs) 0 0",
-                }}
+        <div
+          style={{
+            display: "grid",
+            gap: "var(--bb-space-4)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            marginBottom: "var(--bb-space-8)",
+          }}
+        >
+          {summary.ok ? (
+            <>
+              <StatTile
+                label="Tokens today"
+                value={count(summary.data.total_tokens)}
+                provenance={totalsProvenance}
+                fetchedAt={summary.fetchedAt}
+                note={
+                  mixesTrust
+                    ? "Mixes locally measured counts with remote client reports."
+                    : undefined
+                }
               />
-              {/* Text wears ink tokens, never the series color. */}
-              <Text role="label-small" style={{ color: "var(--bb-ink-2)" }}>{slot}</Text>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section style={card}>
-        <Text role="title-medium" as="h2">Status — reserved, never a series</Text>
-        <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)", marginBottom: "var(--bb-space-4)" }}>
-          Always icon plus label. Meaning never rests on hue.
-        </Text>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--bb-space-4)" }}>
-          {STATUS.map(({ role, label }) => (
-            <span
-              key={role}
-              className="bb-label-large"
-              style={{ display: "inline-flex", alignItems: "center", gap: "var(--bb-space-2)" }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: "12px",
-                  height: "12px",
-                  borderRadius: "var(--bb-radius-full)",
-                  background: `var(--bb-status-${role})`,
-                }}
+              <StatTile
+                label="Cost today"
+                value={money(summary.data.cost, summary.data.currency)}
+                // Always derived: computed from a price table, never measured.
+                provenance="derived"
+                fetchedAt={summary.fetchedAt}
               />
-              {label}
-            </span>
-          ))}
+              <StatTile
+                label="Requests today"
+                value={count(summary.data.request_count)}
+                provenance={totalsProvenance}
+                fetchedAt={summary.fetchedAt}
+              />
+            </>
+          ) : null}
+          {cache.ok && cache.data.current ? (
+            <StatTile
+              label="Cache hit rate"
+              // null renders "no samples", never 0%: absence of evidence is not
+              // evidence of failure.
+              value={rate(cache.data.current.lifetime_hit_rate)}
+              provenance="measured"
+              // The SAMPLE's timestamp, not the request's. /api/cache serves
+              // stored samples from Postgres, so it answers happily while Redis
+              // is down — badging it "just now" because we asked just now would
+              // present an hour-old number as current, which is the exact failure
+              // this page exists to prevent.
+              fetchedAt={new Date(cache.data.current.timestamp)}
+              note="Lifetime, from Redis counters."
+            />
+          ) : null}
         </div>
-      </section>
 
-      <section style={card}>
-        <Text role="title-medium" as="h2">Focus and state</Text>
-        <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)", marginBottom: "var(--bb-space-4)" }}>
-          Tab to these. Every interactive element shows a 3px ring at 2px offset.
-        </Text>
-        <div style={{ display: "flex", gap: "var(--bb-space-4)", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="bb-interactive bb-label-large"
-            style={{
-              background: "var(--bb-primary)",
-              color: "var(--bb-on-primary)",
-              border: 0,
-              borderRadius: "var(--bb-radius-full)",
-              padding: "0 var(--bb-space-6)",
-              cursor: "pointer",
-            }}
-          >
-            Filled
-          </button>
-          <button
-            type="button"
-            className="bb-interactive bb-label-large"
-            style={{
-              background: "transparent",
-              color: "var(--bb-primary)",
-              border: "1px solid var(--bb-outline)",
-              borderRadius: "var(--bb-radius-full)",
-              padding: "0 var(--bb-space-6)",
-              cursor: "pointer",
-            }}
-          >
-            Outlined
-          </button>
-          <button type="button" disabled className="bb-label-large" style={{ borderRadius: "var(--bb-radius-full)", padding: "0 var(--bb-space-6)", minHeight: "var(--bb-touch-target)" }}>
-            Disabled
-          </button>
+        <div
+          style={{
+            display: "grid",
+            gap: "var(--bb-space-6)",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          }}
+        >
+          <Panel title="Services">
+            <PanelBody state={healthState}>
+              {(data) => (
+                <ul style={{ ...listReset, display: "grid", gap: "var(--bb-space-3)" }}>
+                  {Object.entries(data.services).map(([name, service]) => (
+                    <li key={name} style={row}>
+                      <Text role="body-medium">{name}</Text>
+                      <StatusChip
+                        role={service.healthy ? "good" : "critical"}
+                        label={service.healthy ? "Healthy" : "Down"}
+                        detail={
+                          service.healthy
+                            ? service.latency_ms != null
+                              ? `${service.latency_ms.toFixed(0)} ms`
+                              : undefined
+                            : (service.error ?? "no detail given")
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PanelBody>
+          </Panel>
+
+          <Panel title="Context gateway">
+            <PanelBody state={gatewayState}>
+              {(data) => (
+                <div style={{ display: "grid", gap: "var(--bb-space-3)" }}>
+                  <StatusChip
+                    role={data.ready ? "good" : "warning"}
+                    label={data.ready ? "Ready" : "Not ready"}
+                    detail={data.ready ? undefined : "Collections or embedding model missing."}
+                  />
+                  {/* Built as one string: a JSX line break before "d" renders as
+                      "30 d", which reads as a typo. */}
+                  <Text role="body-small" style={{ color: "var(--bb-on-surface-variant)" }}>
+                    {`${data.embedding_model} · threshold ${data.threshold} · top-k ${data.top_k} · TTL ${data.ttl_days}d`}
+                  </Text>
+                  <ul style={{ ...listReset, display: "grid", gap: "var(--bb-space-2)" }}>
+                    {Object.entries(data.collections).map(([name, collection]) => (
+                      <li key={name} style={row}>
+                        <Text role="body-medium">{name}</Text>
+                        {/* Only cosine distances are comparable to the threshold.
+                            Any other space makes every score from it meaningless,
+                            so it is flagged rather than rendered as fine. */}
+                        {collection.space === "cosine" ? (
+                          <Text role="label-medium" style={{ color: "var(--bb-on-surface-variant)" }}>
+                            cosine
+                          </Text>
+                        ) : (
+                          <StatusChip
+                            role="serious"
+                            label={collection.space}
+                            detail="scores cannot be compared to the threshold"
+                          />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </PanelBody>
+          </Panel>
+
+          <Panel title="Host">
+            <PanelBody state={systemState}>
+              {(data) =>
+                data.current ? (
+                  <ul style={{ ...listReset, display: "grid", gap: "var(--bb-space-2)" }}>
+                    <li style={row}>
+                      <Text role="body-medium">CPU</Text>
+                      <Text role="body-medium" tabular>
+                        {percent(data.current.cpu_percent)}
+                      </Text>
+                    </li>
+                    <li style={row}>
+                      <Text role="body-medium">Memory</Text>
+                      <Text role="body-medium" tabular>
+                        {percent(data.current.memory_percent)} of{" "}
+                        {bytes(data.current.memory_total_bytes)}
+                      </Text>
+                    </li>
+                    <li style={row}>
+                      <Text role="body-medium">Disk</Text>
+                      <Text role="body-medium" tabular>
+                        {percent(data.current.disk_percent)} of {bytes(data.current.disk_total_bytes)}
+                      </Text>
+                    </li>
+                    <li style={{ marginTop: "var(--bb-space-2)" }}>
+                      <ProvenanceBadge kind="measured" fetchedAt={new Date(data.current.timestamp)} />
+                    </li>
+                  </ul>
+                ) : null
+              }
+            </PanelBody>
+          </Panel>
+
+          <Panel title="Redis cache">
+            <PanelBody state={cacheState}>
+              {(data) =>
+                data.current ? (
+                  <ul style={{ ...listReset, display: "grid", gap: "var(--bb-space-2)" }}>
+                    <li style={row}>
+                      <Text role="body-medium">Keys</Text>
+                      <Text role="body-medium" tabular>
+                        {count(data.current.total_keys)}
+                      </Text>
+                    </li>
+                    <li style={row}>
+                      <Text role="body-medium">Memory</Text>
+                      <Text role="body-medium" tabular>
+                        {bytes(data.current.used_memory_bytes)}
+                      </Text>
+                    </li>
+                    <li style={row}>
+                      <Text role="body-medium">Clients</Text>
+                      <Text role="body-medium" tabular>
+                        {count(data.current.connected_clients)}
+                      </Text>
+                    </li>
+                    {/* Sampled, not live. Without the sample's own age this panel
+                        keeps showing figures from before Redis died. */}
+                    <li style={{ marginTop: "var(--bb-space-2)" }}>
+                      <ProvenanceBadge kind="measured" fetchedAt={new Date(data.current.timestamp)} />
+                    </li>
+                  </ul>
+                ) : null
+              }
+            </PanelBody>
+          </Panel>
         </div>
-      </section>
-    </main>
+      </main>
+    </div>
   );
 }

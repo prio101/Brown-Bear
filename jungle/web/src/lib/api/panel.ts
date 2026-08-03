@@ -44,7 +44,12 @@ export function toPanelState<T>(
  * A page that awaits its endpoints in sequence is as slow as their sum. Every
  * result is independent, so one slow or failing endpoint degrades one panel.
  */
-export function all<T extends readonly Promise<unknown>[]>(
+// The `| []` in the constraint is load-bearing: it is what makes TypeScript infer
+// an array literal as a tuple rather than widening it to a union array. Without
+// it every destructured result collapses to the same type, which is silent and
+// deeply confusing at the call site. This mirrors lib.es2015's own Promise.all
+// signature for that reason.
+export function all<T extends readonly unknown[] | []>(
   requests: T,
 ): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> {
   return Promise.all(requests) as Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }>;

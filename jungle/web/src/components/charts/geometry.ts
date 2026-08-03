@@ -1,9 +1,11 @@
 /**
  * Chart geometry and number formatting (BB-106).
  *
- * Ported from `jungle/app/brownbear/static/charts.js`, whose conventions this
- * sprint preserves rather than re-picks. Pure functions, kept out of the
- * components so they can be tested without a DOM.
+ * Ported from the Jinja dashboard's charts.js, which BB-110 deleted. Its
+ * conventions were preserved rather than re-picked, and now live in
+ * DESIGN-BOOK.md §9 -- the file is gone, the reasoning is not.
+ *
+ * Pure functions, kept out of the components so they can be tested without a DOM.
  */
 
 /** A point whose value may be absent. `null` breaks the line; it is never zero. */

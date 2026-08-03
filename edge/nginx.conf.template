@@ -158,15 +158,6 @@ server {
         include /etc/nginx/proxy_timeouts.conf;
     }
 
-    location /static/ {
-        error_page 401 = @unauthorized;
-        if ($bb_auth = 0) { return 401; }
-        limit_except GET { deny all; }
-        proxy_pass http://app:8080/static/;
-        include /etc/nginx/proxy_common.conf;
-        include /etc/nginx/proxy_timeouts.conf;
-    }
-
     # ---- authenticated: read-only API the pages consume ------------------
     # GET only. The write paths (PUT /api/settings, POST
     # /api/tokens/aggregate) fall through to the default deny, so a remote

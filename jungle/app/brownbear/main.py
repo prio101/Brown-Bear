@@ -9,15 +9,11 @@ Routers are mounted here as each spec lands:
 """
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from brownbear import __version__
 from brownbear.config import get_settings
-
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 @asynccontextmanager
@@ -50,11 +46,8 @@ def create_app() -> FastAPI:
         monitoring,
         ollama_proxy,
         tokens,
-        ui,
     )
     from brownbear.routers import settings as settings_router
-
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(health.router)
     app.include_router(tokens.router)
@@ -64,11 +57,10 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(ext.router)
     app.include_router(ollama_proxy.router)
-    # Public, unauthenticated at the edge (BB-109). Mounted before the UI, which
-    # owns "/".
+    # Public, unauthenticated at the edge (BB-109).
     app.include_router(design.router)
-    # Last: the UI owns "/", which the API used to serve.
-    app.include_router(ui.router)
+    # No router owns "/" any more: the Next.js frontend serves every page, and the
+    # edge proxies them to web:3000 (BB-104, BB-110).
 
     @app.get("/api/info")
     async def info() -> dict:

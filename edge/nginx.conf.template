@@ -125,12 +125,15 @@ server {
         include /etc/nginx/proxy_timeouts_long.conf;
     }
 
-    # ---- authenticated: dashboard pages ----------------------------------
+    # ---- authenticated: dashboard pages (BB-104) --------------------------
+    # Served by the Next.js frontend, not the app. The app still owns every
+    # /api/* route below; only the HTML moved. No auth code was added to the
+    # frontend — this edge remains the one boundary.
     location = / {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/;
+        proxy_pass http://web:3000;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -139,7 +142,18 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080$uri;
+        proxy_pass http://web:3000$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # The framework's asset prefix. Fixed by Next and not foldable into
+    # /static/; without it every page renders unstyled and inert.
+    location /_next/ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://web:3000;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }

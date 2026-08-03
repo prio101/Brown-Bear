@@ -1,6 +1,6 @@
 # Feature: Typed API Client + Data Layer
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** High — all four page tickets consume this
 **Points:** 2
 **Branch:** `feat/bb-103-api-client`

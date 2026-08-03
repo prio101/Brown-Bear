@@ -1,6 +1,6 @@
 # Feature: Overview Page
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** High — the dashboard's landing surface
 **Points:** 2
 **Branch:** `feat/bb-105-overview-page`

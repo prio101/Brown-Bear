@@ -1,6 +1,6 @@
 # Feature: Settings Page (Read-Only)
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** Low — smallest page, but the clearest test of the "disabled with a
 reason" rule
 **Points:** 1

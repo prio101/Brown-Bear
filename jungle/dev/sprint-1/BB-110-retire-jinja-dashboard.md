@@ -1,6 +1,6 @@
 # Refactor: Retire the Jinja Dashboard
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** Medium — closes the sprint; two dashboards drifting is the failure
 this prevents
 **Points:** 1

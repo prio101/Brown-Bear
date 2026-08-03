@@ -1,6 +1,6 @@
 # Feature: Cache + Collections Pages
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** Medium — the surfaces where a wrong cache hit becomes visible
 **Points:** 2
 **Branch:** `feat/bb-107-cache-collections`

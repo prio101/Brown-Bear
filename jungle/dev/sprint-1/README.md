@@ -29,16 +29,16 @@ redesigning the charts.
 
 | ID | Title | Type | Pts | Branch |
 |---|---|---|---|---|
-| [BB-101](BB-101-nextjs-app-scaffold.md) | Next.js app scaffold + container | feature | 3 | `feat/bb-101-nextjs-scaffold` |
-| [BB-102](BB-102-design-system-foundation.md) | Design system foundation (M3 tokens) | feature | 3 | `feat/bb-102-design-tokens` |
-| [BB-103](BB-103-typed-api-client.md) | Typed API client + data layer | feature | 2 | `feat/bb-103-api-client` |
-| [BB-104](BB-104-edge-frontend-routes.md) | Edge routes for the frontend | refactor | 1 | `refactor/bb-104-edge-frontend-routes` |
-| [BB-105](BB-105-overview-page.md) | Overview page | feature | 2 | `feat/bb-105-overview-page` |
-| [BB-106](BB-106-token-analytics-page.md) | Token analytics page + charts | feature | 3 | `feat/bb-106-token-analytics` |
-| [BB-107](BB-107-cache-collections-pages.md) | Cache + Collections pages | feature | 2 | `feat/bb-107-cache-collections` |
-| [BB-108](BB-108-settings-page.md) | Settings page (read-only) | feature | 1 | `feat/bb-108-settings-page` |
+| [BB-101](BB-101-nextjs-app-scaffold.md) | Next.js app scaffold + container — **done** | feature | 3 | `feat/bb-101-nextjs-scaffold` |
+| [BB-102](BB-102-design-system-foundation.md) | Design system foundation (M3 tokens) — **done** | feature | 3 | `feat/bb-102-design-tokens` |
+| [BB-103](BB-103-typed-api-client.md) | Typed API client + data layer — **done** | feature | 2 | `feat/bb-103-api-client` |
+| [BB-104](BB-104-edge-frontend-routes.md) | Edge routes for the frontend — **done** | refactor | 1 | `refactor/bb-104-edge-frontend-routes` |
+| [BB-105](BB-105-overview-page.md) | Overview page — **done** | feature | 2 | `feat/bb-105-overview-page` |
+| [BB-106](BB-106-token-analytics-page.md) | Token analytics page + charts — **done** | feature | 3 | `feat/bb-106-token-analytics` |
+| [BB-107](BB-107-cache-collections-pages.md) | Cache + Collections pages — **done** | feature | 2 | `feat/bb-107-cache-collections` |
+| [BB-108](BB-108-settings-page.md) | Settings page (read-only) — **done** | feature | 1 | `feat/bb-108-settings-page` |
 | [BB-109](BB-109-design-book-public-view.md) | Design Book public view — **done** | feature | 2 | `feat/bb-109-design-book-public` |
-| [BB-110](BB-110-retire-jinja-dashboard.md) | Retire the Jinja dashboard | refactor | 1 | `refactor/bb-110-retire-jinja-ui` |
+| [BB-110](BB-110-retire-jinja-dashboard.md) | Retire the Jinja dashboard — **done** | refactor | 1 | `refactor/bb-110-retire-jinja-ui` |
 
 **Total: 20 points.**
 
@@ -117,15 +117,44 @@ HTML route on the FastAPI app keeps the public surface to exactly two paths.
 
 ---
 
-## Definition of done
+## Definition of done — closed 2026-08-03
 
-- [ ] All 10 tickets closed, each against its own branch
-- [ ] `docker compose up -d` brings up the frontend with no manual steps
-- [ ] Every page renders in light and dark, at compact / medium / expanded
-- [ ] Design Book §13 conformance checklist passes per page
-- [ ] The Jinja dashboard, its templates, and `jinja2` are gone (BB-110)
-- [ ] No API response shape changed — verified by diffing responses pre/post
-- [ ] The edge still default-denies everything not explicitly allowlisted
+- [x] All 10 tickets closed, each against its own branch
+- [x] `docker compose up -d` brings up the frontend with no manual steps
+- [ ] **Every page renders in light and dark, at compact / medium / expanded** —
+      NOT verified. Confirmed structurally (both dark scopes in the served bundle,
+      responsive grids, rail/bar breakpoints) but no browser has rendered these
+      pages. This is the sprint's one open item; see "Left undone" below.
+- [ ] **Design Book §13 conformance checklist per page** — the machine-checkable
+      half passes (`check:tokens` clean, table twins and `aria-label`s counted on
+      the rendered HTML, no dual axis, no pie, secrets absent). The visual half is
+      part of the item above.
+- [x] The Jinja dashboard, its templates, and `jinja2` are gone (BB-110) —
+      `import jinja2` raises ModuleNotFoundError inside the running container
+- [x] No API response shape changed — this sprint added no endpoint and no write
+      path; the app suite passes unmodified at 102 tests
+- [x] The edge still default-denies everything not explicitly allowlisted —
+      re-verified after BB-104 and again after BB-110
+
+## Left undone
+
+**Nobody has looked at this in a browser.** Every check in this sprint was
+programmatic: HTTP status, rendered HTML content, counted `aria-label`s and table
+twins, token conformance, secret absence, and 51 unit tests. That catches wrong
+values and missing structure. It does not catch a collided label, an overflowing
+table, a chart drawn off its frame, or a colour that reads badly in dark mode.
+
+Two surfaces exist for that pass:
+
+- `http://127.0.0.1:3001/design-system` — every type role, all eight series slots,
+  status chips, focus states, and a working light/dark/system toggle on one screen.
+- the five pages themselves, at 360px / 800px / 1400px, in both modes.
+
+**Also deferred:** `<StackedBarChart>` (§106.1) was specified but not built —
+nothing on these pages needed a part-to-whole chart, and building an unused chart
+primitive is speculative. `texture fill` for CVD/print/`forced-colors` (§106.6) is
+likewise unbuilt; the table twin covers the same accessibility need for now. Both
+are noted rather than silently dropped.
 
 ---
 

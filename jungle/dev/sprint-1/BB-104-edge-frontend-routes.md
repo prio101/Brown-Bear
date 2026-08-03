@@ -1,6 +1,6 @@
 # Refactor: Edge Routes for the Frontend
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** High — without it the new frontend is unreachable through the tunnel
 **Points:** 1
 **Branch:** `refactor/bb-104-edge-frontend-routes`

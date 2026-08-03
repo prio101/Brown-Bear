@@ -1,6 +1,6 @@
 # Feature: Token Analytics Page + Chart Components
 
-**Status:** Open
+**Status:** Done — 2026-08-03, delivered notes in the commit message
 **Priority:** High — the heaviest ticket in the sprint and the critical path
 **Points:** 3
 **Branch:** `feat/bb-106-token-analytics`

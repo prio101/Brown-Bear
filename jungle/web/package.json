@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "gen:theme": "esbuild scripts/gen-theme.mjs --bundle --platform=node --format=esm --outfile=.gen/gen-theme.mjs --log-level=error && node .gen/gen-theme.mjs",
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "prebuild": "npm run gen:theme",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@material/material-color-utilities": "^0.4.0",
     "next": "^16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
@@ -17,6 +21,7 @@
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "esbuild": "^0.28.1",
     "typescript": "^6.0.3"
   }
 }

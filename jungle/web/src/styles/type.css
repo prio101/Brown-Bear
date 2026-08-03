@@ -1,0 +1,51 @@
+/* Type scale (BB-102 §102.3) — Material Design 3's fifteen roles, unmodified.
+ *
+ * Exact values from DESIGN-BOOK.md §3. Adding a sixteenth size is a smell; if a
+ * design needs one, the book changes first.
+ *
+ * Numerals: large standalone figures use default proportional figures.
+ * `.bb-tabular` is for values that must align vertically — table columns and
+ * axis ticks — and nowhere else.
+ */
+
+.bb-display-large,
+.bb-display-medium,
+.bb-display-small,
+.bb-headline-large,
+.bb-headline-medium,
+.bb-headline-small,
+.bb-title-large,
+.bb-title-medium,
+.bb-title-small,
+.bb-body-large,
+.bb-body-medium,
+.bb-body-small,
+.bb-label-large,
+.bb-label-medium,
+.bb-label-small {
+  font-family: var(--bb-font);
+  margin: 0;
+}
+
+.bb-display-large  { font-size: 57px; line-height: 64px; font-weight: 400; letter-spacing: -0.25px; }
+.bb-display-medium { font-size: 45px; line-height: 52px; font-weight: 400; letter-spacing: 0; }
+.bb-display-small  { font-size: 36px; line-height: 44px; font-weight: 400; letter-spacing: 0; }
+
+.bb-headline-large  { font-size: 32px; line-height: 40px; font-weight: 400; letter-spacing: 0; }
+.bb-headline-medium { font-size: 28px; line-height: 36px; font-weight: 400; letter-spacing: 0; }
+.bb-headline-small  { font-size: 24px; line-height: 32px; font-weight: 400; letter-spacing: 0; }
+
+.bb-title-large  { font-size: 22px; line-height: 28px; font-weight: 400; letter-spacing: 0; }
+.bb-title-medium { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0.15px; }
+.bb-title-small  { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; }
+
+.bb-body-large  { font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0.5px; }
+.bb-body-medium { font-size: 14px; line-height: 20px; font-weight: 400; letter-spacing: 0.25px; }
+.bb-body-small  { font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: 0.4px; }
+
+.bb-label-large  { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; }
+.bb-label-medium { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px; }
+.bb-label-small  { font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px; }
+
+/* Vertical alignment only — never on a hero figure or a stat-tile value. */
+.bb-tabular { font-variant-numeric: tabular-nums; }

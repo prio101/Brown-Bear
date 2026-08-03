@@ -1,0 +1,81 @@
+/* The single stylesheet entry point (BB-102).
+ *
+ * Import order matters: generated theme first, then fixed tokens, then the
+ * layers that consume them.
+ */
+
+@import "./theme.generated.css";
+@import "./tokens.css";
+@import "./chart-tokens.css";
+@import "./type.css";
+@import "./interaction.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* Follows the resolved theme so form controls, scrollbars and the canvas
+   * match. The toggle stamps data-theme on this element (§102.5). */
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+  }
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bb-page-plane);
+  color: var(--bb-ink);
+  font-family: var(--bb-font);
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: 0.5px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Wide content scrolls inside its own container; the page body never scrolls
+ * horizontally (DESIGN-BOOK.md §7). */
+body {
+  overflow-x: hidden;
+}
+
+.bb-scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.bb-page {
+  max-width: var(--bb-content-max);
+  margin: 0 auto;
+  padding: var(--bb-space-6) var(--bb-gutter-compact) var(--bb-space-16);
+}
+
+@media (min-width: 600px) {
+  .bb-page {
+    padding-inline: var(--bb-gutter-expanded);
+  }
+}
+
+/* Screen-reader-only, but focusable — used for skip links, never to hide a
+ * chart's table twin behind no affordance (§9.6). */
+.bb-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

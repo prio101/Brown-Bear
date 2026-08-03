@@ -1,0 +1,65 @@
+/* Interaction primitives (BB-102 §102.4).
+ *
+ * State as fixed-opacity layers rather than bespoke hover colors per component:
+ * that is what makes an unfamiliar control feel predictable (DESIGN-BOOK.md §5).
+ */
+
+/* Apply to any interactive surface. The layer tints with the element's own
+ * current color, so it works on any background without a second token. */
+.bb-interactive {
+  position: relative;
+  isolation: isolate;
+  min-height: var(--bb-touch-target);
+  min-width: var(--bb-touch-target);
+  transition: background-color var(--bb-duration-short-2) var(--bb-easing-standard);
+}
+
+.bb-interactive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: currentColor;
+  opacity: 0;
+  border-radius: inherit;
+  transition: opacity var(--bb-duration-short-2) var(--bb-easing-standard);
+  pointer-events: none;
+}
+
+.bb-interactive:hover::after      { opacity: var(--bb-state-hover); }
+.bb-interactive:focus-visible::after { opacity: var(--bb-state-focus); }
+.bb-interactive:active::after     { opacity: var(--bb-state-pressed); }
+
+/* Focus visibility is non-negotiable: 3px primary ring at 2px offset, on every
+ * interactive element. `outline: none` without a replacement fails review. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--bb-primary);
+  outline-offset: 2px;
+  border-radius: var(--bb-radius-xs);
+}
+
+/* Disabled: content and container get different opacities (§5). Paired with
+ * aria-disabled or :disabled, never styling alone. */
+.bb-disabled,
+:where(button, input, select, textarea):disabled {
+  opacity: var(--bb-state-disabled-content);
+  cursor: not-allowed;
+}
+
+.bb-disabled-container {
+  opacity: var(--bb-state-disabled-container);
+}
+
+/* Reduced motion: drop to opacity-only. Nothing that moves, scales or
+ * translates survives this (§6). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-property: opacity !important;
+    transition-duration: var(--bb-duration-short-1) !important;
+  }
+}

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { THEME_INIT_SCRIPT } from "@/components/ThemeToggle";
 import { APP_NAME } from "@/lib/config";
+
+import "@/styles/global.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -10,10 +13,17 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    // `color-scheme` on the root element is what makes form controls,
-    // scrollbars and the canvas follow the theme. BB-102 replaces the inline
-    // style with the token layer and adds the explicit light/dark toggle.
-    <html lang="en" style={{ colorScheme: "light dark" }}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Stamps data-theme before first paint so an explicit light/dark choice
+          never flashes the wrong theme. It must be inline and synchronous —
+          anything deferred paints first and corrects afterwards, which is the
+          flash. suppressHydrationWarning on <html> is required because this
+          script mutates the element the server just rendered.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

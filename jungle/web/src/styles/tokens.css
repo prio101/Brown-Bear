@@ -1,0 +1,73 @@
+/* Static design tokens (BB-102 §102.2).
+ *
+ * Everything here is fixed by DESIGN-BOOK.md §4–§7 and does not depend on the
+ * theme seed. Theme color lives in theme.generated.css; chart color in
+ * chart-tokens.css. Three files, so "a reseed cannot repaint a series" is
+ * checkable at a glance.
+ */
+
+:root {
+  /* --- type (§3) --- */
+  --bb-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bb-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* --- spacing (§4): 4px grid, 8px rhythm. Nothing off-grid. --- */
+  --bb-space-1: 4px;
+  --bb-space-2: 8px;
+  --bb-space-3: 12px;
+  --bb-space-4: 16px;
+  --bb-space-6: 24px;
+  --bb-space-8: 32px;
+  --bb-space-12: 48px;
+  --bb-space-16: 64px;
+
+  /* --- shape (§4) --- */
+  --bb-radius-none: 0;
+  --bb-radius-xs: 4px;
+  --bb-radius-sm: 8px;
+  --bb-radius-md: 12px;
+  --bb-radius-lg: 16px;
+  --bb-radius-xl: 28px;
+  --bb-radius-full: 9999px;
+
+  /* --- elevation (§4): levels 0/1/3 only. Adding 4 or 5 needs a book note. --- */
+  --bb-elevation-0: none;
+  --bb-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+  --bb-elevation-3: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 8px 3px rgba(0, 0, 0, 0.15);
+
+  /* --- state layers (§5) --- */
+  --bb-state-hover: 0.08;
+  --bb-state-focus: 0.10;
+  --bb-state-pressed: 0.10;
+  --bb-state-dragged: 0.16;
+  --bb-state-disabled-content: 0.38;
+  --bb-state-disabled-container: 0.12;
+
+  /* --- motion (§6) --- */
+  --bb-duration-short-1: 50ms;
+  --bb-duration-short-2: 100ms;
+  --bb-duration-short-3: 150ms;
+  --bb-duration-short-4: 200ms;
+  --bb-duration-medium-1: 250ms;
+  --bb-duration-medium-2: 300ms;
+  --bb-duration-medium-3: 350ms;
+  --bb-duration-medium-4: 400ms;
+  --bb-duration-long-1: 450ms;
+  --bb-duration-long-2: 500ms;
+  --bb-duration-long-3: 550ms;
+  --bb-duration-long-4: 600ms;
+
+  --bb-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --bb-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --bb-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+
+  /* --- layout (§7) --- */
+  --bb-content-max: 1440px;
+  --bb-gutter-compact: 16px;
+  --bb-gutter-expanded: 24px;
+  --bb-touch-target: 48px;
+}
+
+/* Breakpoints are documented here rather than tokenised: custom properties
+ * cannot be used in media queries. compact < 600px · medium 600–1023px ·
+ * expanded >= 1024px. Use those literals and nothing between them. */

@@ -1,0 +1,116 @@
+/* Chart color (BB-102 §102.2) — fixed, NOT themed.
+ *
+ * This file is deliberately separate from theme.generated.css. The series
+ * palette is validated for contrast against the exact surfaces below, so a
+ * theme-tinted chart surface would invalidate that validation, and a reseed must
+ * never repaint a series or let a series color impersonate a status.
+ *
+ * Validated 2026-08-03 against these surfaces (DESIGN-BOOK.md §9.1):
+ *   adjacent pairs, light: worst CVD dE 9.1 · normal-vision 19.6  — pass
+ *   adjacent pairs, dark:  worst CVD dE 8.4 · normal-vision 19.3  — pass
+ *   first 3 slots all-pairs, light: CVD 9.2 · normal-vision 24.0  — pass
+ * Light-mode aqua (2.74), yellow (2.11) and magenta (2.62) sit below 3:1 on the
+ * light surface: the relief rule applies — those series carry visible direct
+ * labels or the table twin, and the table twin is mandatory anyway.
+ *
+ * Changing any value here requires re-running the validator and updating
+ * DESIGN-BOOK.md §9.1. See DESIGN-BOOK.md §14.
+ */
+
+:root {
+  /* --- fixed chart surfaces (§2.2) --- */
+  --bb-chart-surface: #fcfcfb;
+  --bb-page-plane: #f9f9f7;
+
+  /* --- chart ink and chrome (§2.3) --- */
+  --bb-ink: #0b0b0b;
+  --bb-ink-2: #52514e;
+  --bb-ink-muted: #898781;
+  --bb-gridline: #e1e0d9;
+  --bb-axis: #c3c2b7;
+  --bb-delta-good: #006300;
+  --bb-hairline: rgba(11, 11, 11, 0.1);
+
+  /* --- categorical series, fixed slot order, never cycled (§9.1) --- */
+  --bb-series-1: #2a78d6; /* blue */
+  --bb-series-2: #eb6834; /* orange */
+  --bb-series-3: #1baf7a; /* aqua */
+  --bb-series-4: #eda100; /* yellow */
+  --bb-series-5: #e87ba4; /* magenta */
+  --bb-series-6: #008300; /* green */
+  --bb-series-7: #4a3aa7; /* violet */
+  --bb-series-8: #e34948; /* red */
+
+  /* --- sequential: one hue, light to dark (§9.1) --- */
+  --bb-seq-100: #cde2fb;
+  --bb-seq-250: #86b6ef;
+  --bb-seq-400: #3987e5;
+  --bb-seq-550: #1c5cab;
+  --bb-seq-700: #0d366b;
+
+  /* --- diverging: two poles, neutral gray midpoint (§9.1) --- */
+  --bb-div-mid: #f0efec;
+}
+
+/* Status palette (§2.4) — reserved, never themed, never a series.
+ * Mode-invariant by design: the same four steps clear 3:1 on the dark surface,
+ * and on light, warning and serious are sub-3:1 deliberately — the icon + label
+ * pairing is the mitigation, so a status color never carries meaning alone. */
+:root {
+  --bb-status-good: #0ca30c;
+  --bb-status-warning: #fab219;
+  --bb-status-serious: #ec835a;
+  --bb-status-critical: #d03b3b;
+}
+
+/* Dark: selected steps for the dark surface, not a lightness flip.
+ * Declared under both scopes so the in-app toggle wins in both directions. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --bb-chart-surface: #1a1a19;
+    --bb-page-plane: #0d0d0d;
+
+    --bb-ink: #ffffff;
+    --bb-ink-2: #c3c2b7;
+    --bb-ink-muted: #898781;
+    --bb-gridline: #2c2c2a;
+    --bb-axis: #383835;
+    --bb-delta-good: #0ca30c;
+    --bb-hairline: rgba(255, 255, 255, 0.1);
+
+    --bb-series-1: #3987e5;
+    --bb-series-2: #d95926;
+    --bb-series-3: #199e70;
+    --bb-series-4: #c98500;
+    --bb-series-5: #d55181;
+    --bb-series-6: #008300;
+    --bb-series-7: #9085e9;
+    --bb-series-8: #e66767;
+
+    --bb-div-mid: #383835;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bb-chart-surface: #1a1a19;
+  --bb-page-plane: #0d0d0d;
+
+  --bb-ink: #ffffff;
+  --bb-ink-2: #c3c2b7;
+  --bb-ink-muted: #898781;
+  --bb-gridline: #2c2c2a;
+  --bb-axis: #383835;
+  --bb-delta-good: #0ca30c;
+  --bb-hairline: rgba(255, 255, 255, 0.1);
+
+  --bb-series-1: #3987e5;
+  --bb-series-2: #d95926;
+  --bb-series-3: #199e70;
+  --bb-series-4: #c98500;
+  --bb-series-5: #d55181;
+  --bb-series-6: #008300;
+  --bb-series-7: #9085e9;
+  --bb-series-8: #e66767;
+
+  --bb-div-mid: #383835;
+}

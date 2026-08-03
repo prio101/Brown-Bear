@@ -292,3 +292,38 @@ class TestExchange:
         # The client called Anthropic, not this proxy: it must not look local.
         assert event["source"].value == "remote_api"
         assert event["request_id"] == "r-1"
+
+
+class TestScopeNormalisedAtTheBoundary:
+    """BB-202: the request models canonicalise the scope, once, for every caller.
+
+    Normalising in one place matters because the scope key reaches three
+    destinations that must agree -- the Chroma `where` filter, the content and
+    exchange id hashes, and the stored metadata. A store path that wrote an
+    un-normalised key would put documents somewhere no lookup can reach, which is
+    the bug this fixes.
+    """
+
+    def test_context_request_canonicalises_project_and_model(self):
+        payload = ext.ContextIn(prompt="hello", project="Brown-Bear", model="Claude-Opus-5")
+
+        assert payload.project == "brownbear"
+        assert payload.model == "claude-opus-5"
+
+    def test_exchange_request_canonicalises_the_same_way(self):
+        # Store and lookup must agree, so both models must normalise identically.
+        stored = ext.ExchangeIn(
+            prompt="hello", response="hi", project="Brown Bear", model="claude-opus-5"
+        )
+        looked_up = ext.ContextIn(prompt="hello", project="brownbear", model="claude-opus-5")
+
+        assert stored.project == looked_up.project
+
+    def test_document_request_canonicalises_project(self):
+        assert ext.DocumentIn(text="x", source="s", project="Brown-Bear").project == "brownbear"
+
+    def test_defaults_survive_normalisation(self):
+        payload = ext.ContextIn(prompt="hello")
+
+        assert payload.project == "default"
+        assert payload.model == "unknown"

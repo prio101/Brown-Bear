@@ -56,8 +56,18 @@ def project_for(event: dict) -> str:
     """Cache scope: one project per repository.
 
     An answer about one codebase must never be served for another, so the scope
-    is the git root's name — not the working directory, which changes as you
+    is the git root's name -- not the working directory, which changes as you
     move around inside a repo.
+
+    Outside a repository the scope is "default", NOT the directory's own name
+    (BB-202). Deriving it from the directory produced a scope named after a home
+    folder -- "prio" -- which then collected unrelated answers from every
+    non-repo path on the machine. A shared default is honest about having no
+    project; a home-directory name pretends to a specificity it does not have.
+
+    The server normalises whatever this returns (case and punctuation are
+    stripped), so "Brown-Bear" and "brownbear" are one cache. Sending a stable
+    string still matters: BB_PROJECT overrides everything when you want to pin it.
     """
     override = os.environ.get("BB_PROJECT")
     if override:
@@ -75,7 +85,7 @@ def project_for(event: dict) -> str:
             return Path(root.stdout.strip()).name
     except (OSError, subprocess.SubprocessError):
         pass
-    return Path(str(cwd)).name or "default"
+    return "default"
 
 
 def prompt_of(event: dict) -> str:

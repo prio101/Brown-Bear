@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from brownbear import gateway, pricing
 from brownbear.config import get_settings
@@ -31,14 +31,35 @@ MAX_DOCUMENT_CHARS = 1_000_000
 MAX_PROMPT_CHARS = 32_000
 
 
-class DocumentIn(BaseModel):
+class _Scoped(BaseModel):
+    """Requests that carry a cache scope (BB-202).
+
+    Normalising at the boundary, once, rather than at each use: the scope key
+    reaches the Chroma `where` filter, the content/exchange id hashes and the
+    stored metadata, and those must agree or a document is stored under a key no
+    lookup will ever produce. This is the single place that decides the canonical
+    form.
+    """
+
+    @field_validator("project", check_fields=False)
+    @classmethod
+    def _canonical_project(cls, value: str) -> str:
+        return gateway.normalise_project(value)
+
+    @field_validator("model", check_fields=False)
+    @classmethod
+    def _canonical_model(cls, value: str) -> str:
+        return gateway.normalise_model(value)
+
+
+class DocumentIn(_Scoped):
     text: Annotated[str, Field(min_length=1, max_length=MAX_DOCUMENT_CHARS)]
     source: Annotated[str, Field(min_length=1, max_length=512)]
     project: Annotated[str, Field(min_length=1, max_length=128)] = "default"
     metadata: dict[str, Any] | None = None
 
 
-class ContextIn(BaseModel):
+class ContextIn(_Scoped):
     prompt: Annotated[str, Field(min_length=1, max_length=MAX_PROMPT_CHARS)]
     project: Annotated[str, Field(min_length=1, max_length=128)] = "default"
     model: Annotated[str, Field(min_length=1, max_length=128)] = "unknown"
@@ -48,7 +69,7 @@ class ContextIn(BaseModel):
     skip_cache: bool = False
 
 
-class ExchangeIn(BaseModel):
+class ExchangeIn(_Scoped):
     prompt: Annotated[str, Field(min_length=1, max_length=MAX_PROMPT_CHARS)]
     response: Annotated[str, Field(min_length=1)]
     project: Annotated[str, Field(min_length=1, max_length=128)] = "default"

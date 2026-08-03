@@ -265,3 +265,60 @@ class TestCacheLookup:
             model="m",
         )
         assert result["hit"] is False
+
+
+class TestScopeNormalisation:
+    """BB-202: every spelling of a project name must resolve to one cache.
+
+    The bug these guard against: scopes are matched with Chroma `$eq`, the client
+    sends the git root's basename, and documents had been stored under a
+    hand-written variant. `Brown-Bear` and `brownbear` were two mutually
+    invisible caches, so the semantic cache never served a single hit.
+    """
+
+    @pytest.mark.parametrize(
+        "spelling",
+        ["Brown-Bear", "brownbear", "brown_bear", "Brown Bear", "  BROWN-BEAR  ", "brown.bear"],
+    )
+    def test_every_spelling_collapses_to_one_scope(self, spelling):
+        assert gateway.normalise_project(spelling) == "brownbear"
+
+    def test_the_reported_failure_case(self):
+        """The exact pair that disabled the cache: what the hook sent vs what was stored."""
+        assert gateway.normalise_project("Brown-Bear") == gateway.normalise_project("brownbear")
+
+    def test_distinct_projects_stay_distinct(self):
+        assert gateway.normalise_project("brownbear") != gateway.normalise_project("otherrepo")
+
+    def test_empty_or_punctuation_only_falls_back_to_default(self):
+        for value in ["", "   ", "---", "___", "..."]:
+            assert gateway.normalise_project(value) == "default"
+
+    def test_model_normalisation_keeps_meaningful_punctuation(self):
+        # smollm2:135m must not become smollm2135m -- the tag is part of the id,
+        # and mangling it would merge models that are genuinely different.
+        assert gateway.normalise_model("SmolLM2:135m") == "smollm2:135m"
+        assert gateway.normalise_model("  claude-opus-5 ") == "claude-opus-5"
+        assert gateway.normalise_model("") == "unknown"
+
+    def test_normalised_scope_makes_the_stored_id_stable(self):
+        """The id hashes the project, so normalisation has to reach it too.
+
+        Otherwise the same exchange stored from two spellings gets two ids, and
+        the dedup that `exchange_id` exists to provide silently stops working.
+        """
+        left = gateway.exchange_id(
+            gateway.normalise_project("Brown-Bear"), "claude-opus-5", "same prompt"
+        )
+        right = gateway.exchange_id(
+            gateway.normalise_project("brownbear"), "claude-opus-5", "same prompt"
+        )
+        assert left == right
+
+    def test_scope_filter_does_not_normalise_for_its_caller(self):
+        """Deliberate: a caller that forgets to normalise must fail visibly.
+
+        Silently normalising here would hide a store path that wrote an
+        un-normalised key, which is exactly how the original bug survived.
+        """
+        assert gateway._scope_filter("Brown-Bear") == {"project": {"$eq": "Brown-Bear"}}

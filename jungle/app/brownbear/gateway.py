@@ -119,11 +119,53 @@ def exchange_id(project: str, model: str, prompt: str) -> str:
     return f"x_{digest[:32]}"
 
 
+_SCOPE_NOISE = re.compile(r"[^a-z0-9]+")
+
+
+def normalise_project(value: str) -> str:
+    """Canonical cache scope for a project name (BB-202).
+
+    Scopes are matched with Chroma `$eq`, so every spelling of a project name is
+    a separate, mutually invisible cache. That is what made the semantic cache
+    unable to serve a single hit: the client sends the git root's basename
+    (``Brown-Bear``), and documents had been stored under ``brownbear`` — three
+    of the fifteen scopes in that corpus differed from another only in case or
+    punctuation.
+
+    Case and separators are therefore dropped entirely rather than collapsed to a
+    single dash: collapsing gives ``brown-bear``, which still does not match
+    ``brownbear``, and matching those is the whole point.
+
+      Brown-Bear · brownbear · brown_bear · "Brown Bear" -> brownbear
+
+    Two genuinely different repositories named ``my-app`` and ``myapp`` do
+    collapse together. That is the accepted cost: an over-merge inside one user's
+    machine is recoverable and visible, whereas the fragmentation it replaces
+    silently disabled the feature the stack exists for.
+    """
+    slug = _SCOPE_NOISE.sub("", value.strip().lower())
+    return slug or "default"
+
+
+def normalise_model(value: str) -> str:
+    """Canonical scope for a model id.
+
+    Only case and surrounding whitespace, deliberately: model ids carry meaningful
+    punctuation (``smollm2:135m``, ``claude-opus-5``) and stripping it would both
+    mangle them for display and merge models that are genuinely different.
+    """
+    return value.strip().lower() or "unknown"
+
+
 def _scope_filter(project: str, model: str | None = None) -> dict[str, Any]:
     """Chroma `where` restricting a lookup to one project (and model).
 
     An answer about one repository must never be served for another, and a
     model's answer is not automatically valid for a different model.
+
+    Callers pass already-normalised values (see `normalise_project`); this does
+    not normalise, so that a caller which forgets to fails visibly in a test
+    rather than silently widening the scope.
     """
     clauses: list[dict[str, Any]] = [{"project": {"$eq": project}}]
     if model:

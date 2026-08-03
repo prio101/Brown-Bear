@@ -42,7 +42,11 @@ def debug_dump(raw: str) -> None:
 
 
 def project_for(event: dict) -> str:
-    """Must match bb_context.py exactly, or lookups never find what was stored."""
+    """Must match bb_context.py exactly, or lookups never find what was stored.
+
+    Outside a repository this is "default", not the directory's name -- see the
+    long form in bb_context.py and BB-202.
+    """
     override = os.environ.get("BB_PROJECT")
     if override:
         return override
@@ -59,7 +63,7 @@ def project_for(event: dict) -> str:
             return Path(root.stdout.strip()).name
     except (OSError, subprocess.SubprocessError):
         pass
-    return Path(str(cwd)).name or "default"
+    return "default"
 
 
 def text_of(message: dict) -> str:

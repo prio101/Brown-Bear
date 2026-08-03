@@ -1,0 +1,10 @@
+# A host node_modules must never reach the image: it is resolved against the
+# host's platform, and bind-mounting or copying it into alpine breaks native
+# modules. The build installs from the lockfile instead.
+node_modules
+.next
+Dockerfile
+.dockerignore
+.git
+*.tsbuildinfo
+.env*.local

@@ -28,6 +28,30 @@ services:
       - redis
     restart: unless-stopped
 
+  # ==================== FRONTEND (BB-101) ====================
+  # Next.js dashboard. Bound to loopback: public access is the edge's job, and
+  # the edge proxies the page routes here (BB-104). Data fetching happens
+  # server-side against app:8080, so no API credential reaches the browser.
+  web:
+    build:
+      context: ./jungle/web
+      # Explicit, for the same reason the app service says it: the Dockerfile has
+      # more than one stage and the last one is not the one to ship.
+      target: runtime
+    container_name: brownbear-web
+    ports:
+      # Host 3001, not 3000: on this host 3000 sits in a Windows/Hyper-V
+      # excluded port range and Docker cannot bind it ("access permissions"),
+      # even though nothing is listening. 3001 also groups the UIs — 3001 web,
+      # 3002 vectoradmin. The container port stays 3000, so the edge still
+      # proxies to web:3000 and nothing inside the network changes.
+      - "127.0.0.1:3001:3000"
+    environment:
+      - BB_API_URL=http://app:8080
+    depends_on:
+      - app
+    restart: unless-stopped
+
   # ==================== EDGE (the tunnel's origin) ====================
   # Authentication plus a default-deny allowlist in front of the app. The tunnel
   # points here, never at app:8080, so both hold even for a quick tunnel — which

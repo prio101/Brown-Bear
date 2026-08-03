@@ -20,18 +20,28 @@ const render = (setting: { key: string; label: string; value: unknown }) =>
       : "set"
     : String(setting.value);
 
+/**
+ * Fixture only — 64 hex characters shaped like a real BB_EDGE_TOKEN and
+ * deliberately synthetic.
+ *
+ * NEVER paste a live credential here. The first draft of this file used the
+ * actual token from .env, which would have published it to the repository in the
+ * very test that asserts secrets do not leak. Tests are committed; .env is not.
+ */
+const FAKE_TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 describe("secret handling", () => {
   it("renders presence only, never the value or a masked prefix", () => {
     const secret = {
       key: "bb_edge_token",
       label: "Edge token",
-      value: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      value: FAKE_TOKEN,
     };
 
     const output = render(secret);
 
     expect(output).toBe("set");
-    expect(output).not.toContain("561b");
+    expect(output).not.toContain(FAKE_TOKEN.slice(0, 8));
     // A mask still leaks length and leading characters.
     expect(output).not.toMatch(/\*|•|\.\.\./);
   });

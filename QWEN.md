@@ -37,7 +37,7 @@ Brown Bear provides a self-hosted, Docker-based environment for local LLM infere
 | `chromadb` | `chromadb/chroma:latest` | `8000` | Vector database for embeddings |
 | `postgres` | `postgres:16-alpine` | `5432` | VectorAdmin metadata database |
 | `vectoradmin` | `mintplexlabs/vectoradmin:latest` | `3002` (→ 3000) | ChromaDB admin/management UI |
-| `redis` | `redis:7-alpine` | `6379` | Caching, sessions, queues |
+| `redis` | `redis:7-alpine` | `6379` | Embedding cache for the gateway (BB-201) |
 | `redisinsight` | `redis/redisinsight:latest` | `5540` | Redis GUI / monitoring |
 
 ## Tech Stack
@@ -46,7 +46,8 @@ Brown Bear provides a self-hosted, Docker-based environment for local LLM infere
 - **Vector DB:** ChromaDB (persistent, with collection management)
 - **Vector Admin UI:** VectorAdmin (browse collections, manage embeddings)
 - **Metadata DB:** PostgreSQL 16
-- **Cache/Sessions:** Redis 7 (password-protected)
+- **Cache:** Redis 7 (password-protected) — caches prompt embeddings so a
+  repeated prompt does not re-run the embedding model. No sessions, no queues.
 - **Redis GUI:** RedisInsight
 - **Orchestration:** Docker Compose v3.8
 

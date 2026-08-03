@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     # for a model whose runner has no embedding support.
     embedding_model: str = "nomic-embed-text"
     embedding_timeout_seconds: float = 120.0
+
+    # --- embedding cache (BB-201) ---
+    # Embedding the prompt is the only per-request model call in the gateway's hot
+    # path, and prompts repeat in a coding loop. Keyed by model, because a vector
+    # from one embedding model is meaningless to another.
+    embedding_cache_enabled: bool = True
+    # Embeddings are deterministic for a fixed model, so the TTL is memory
+    # management rather than freshness. A week is long enough to be useful and
+    # short enough that a re-pulled model's stale vectors age out on their own.
+    embedding_cache_ttl_seconds: int = 604_800
     # Texts per /api/embed call. Ollama loads the whole batch at once, so this
     # bounds peak memory rather than optimising throughput.
     embedding_batch_size: int = 32

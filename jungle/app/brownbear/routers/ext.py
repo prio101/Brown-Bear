@@ -16,7 +16,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from brownbear import gateway, pricing
+from brownbear import embeddings, gateway, pricing
 from brownbear.config import get_settings
 from brownbear.connectors import ollama
 from brownbear.models.tokens import TokenSource
@@ -166,7 +166,10 @@ async def context(payload: ContextIn) -> dict[str, Any]:
     collections = await _collections()
 
     try:
-        embedding = await ollama.embed_one(payload.prompt)
+        # Cached (BB-201): the same prompt in a coding loop should not re-run the
+        # embedding model. A cache miss or an unreachable Redis falls through to
+        # Ollama transparently.
+        embedding = await embeddings.embed_one(payload.prompt)
     except Exception as exc:  # noqa: BLE001
         logger.exception("embedding failed")
         raise HTTPException(

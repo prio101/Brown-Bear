@@ -24,7 +24,7 @@ from typing import Any
 
 import anyio.to_thread
 
-from brownbear import settings_store
+from brownbear import embeddings, settings_store
 from brownbear.config import get_settings
 from brownbear.connectors import chroma, ollama
 from brownbear.db import session_scope
@@ -451,7 +451,10 @@ async def store_exchange(
     asked. The answer rides along as the stored document.
     """
     settings = get_settings()
-    embedding = await ollama.embed_one(prompt)
+    # Cached (BB-201), and this is the highest-value hit in the system: the client
+    # calls /ext/context and then /ext/exchange with the *same* prompt, so the
+    # vector this needs was computed moments ago by the lookup.
+    embedding = await embeddings.embed_one(prompt)
     now = datetime.now(UTC)
     cacheable = not is_volatile(prompt)
 

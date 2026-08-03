@@ -1,6 +1,6 @@
 # Bug: Redis cache hit rate is always zero
 
-**Status:** Open — diagnosed, not fixed
+**Status:** Fixed — 2026-08-04 via option A, see *Resolution* at the end
 **Severity:** Medium — no data loss, but the dashboard presents a metric that cannot move, and a whole service earns its keep by doing nothing
 **Points:** 3
 **Branch:** `fix/bb-201-redis-unused`
@@ -148,3 +148,81 @@ a ten-minute change that stops the dashboard implying a fault where none exists.
 - **If option A:** the embedding cache key must include the embedding model name.
   A cached `nomic-embed-text` vector is not valid for a different model, and
   serving one silently would corrupt every similarity score computed from it.
+
+---
+
+## Resolution — 2026-08-04
+
+**Option A: Redis now caches prompt embeddings.** Chosen over removing the
+service or merely relabelling the tile, because embedding the prompt is the only
+per-request model call in the gateway's hot path and prompts repeat constantly in
+a coding loop. Option C became unnecessary: the metric is real now, so there is
+nothing to relabel.
+
+**Files:** `brownbear/embeddings.py` (new), `brownbear/connectors/redis_conn.py`
+(`cache_get`/`cache_set`), `brownbear/config.py`, `brownbear/routers/ext.py`,
+`brownbear/gateway.py`, `tests/test_embeddings.py`, `CLAUDE.md`, `QWEN.md`.
+
+**Measured on the live stack.** Two identical `/ext/context` calls:
+
+```
+call 1: 1044 ms      (miss — the embedding model ran)
+call 2:   80 ms      (hit  — 13x faster)
+```
+
+Then four distinct prompts asked twice each:
+
+```
+keyspace_hits:   6
+keyspace_misses: 5
+dbsize:          5
+key:  bb:emb:nomic-embed-text:8e98ea7dd7836cc1…
+ttl:  604783        (7 days, counting down)
+```
+
+The dashboard tile went from **"no samples"** to **"Cache hit rate 66.7%"** —
+the first time that number has ever been able to move.
+
+**Two rules make it safe to trust:**
+
+1. **The model name is in the key** (`bb:emb:{model}:{sha256(text)}`). A
+   `nomic-embed-text` vector is meaningless to another model, and serving one
+   silently would corrupt every similarity score the gateway then compares to a
+   0.95 cutoff. This was the one real correctness risk in the change.
+2. **Every cache failure is a miss, never an error.** Redis down, a timeout, an
+   unparseable payload, or a value that is the wrong shape all fall through to
+   Ollama. Spec 005 requires that Brown Bear being unwell degrades context rather
+   than blocking work, and a cache that can break what it accelerates is worse
+   than no cache. Twenty tests cover this, including six poisoned-payload shapes.
+
+**Wired at two call sites**, and the second is the higher-value one: the client
+calls `/ext/context` and then `/ext/exchange` with the *same* prompt, so the
+store path's embedding was computed moments earlier by the lookup. That pairing
+alone halves the gateway's model calls.
+
+**Document ingestion deliberately does not use the cache.** Chunks are
+near-unique, so caching them would spend memory on entries that never repeat, and
+ingestion is already idempotent by content id.
+
+**The collection-creation probe also stays uncached** (`ollama.embed_one("dimension
+probe")`). It exists to prove the embedder is actually alive; serving it from
+cache would defeat the check.
+
+**TTL is 7 days** and mandatory — an embedding cache without expiry grows without
+bound on a box that is also running a model server. Embeddings are deterministic
+for a fixed model, so the TTL is memory management rather than freshness, and it
+also means a re-pulled model's stale vectors age out on their own.
+
+`CLAUDE.md` and `QWEN.md` claimed Redis provided "Caching, sessions, queues".
+Now corrected to what the code does: an embedding cache, no sessions, no queues.
+
+Tests: 138 pass, up from 118.
+
+### Still open
+
+- [ ] **`QWEN.md` is a byte-identical duplicate of `CLAUDE.md`.** Both were
+      updated here to keep them consistent, but two copies of the same document
+      will drift. Worth deleting one or making it a symlink — a separate decision.
+- [ ] **A second candidate remains:** `/api/tokens/*` aggregates are recomputed on
+      every page load and would cache well. Not done here; this ticket only needed
+      one real consumer to stop the metric being fictional.

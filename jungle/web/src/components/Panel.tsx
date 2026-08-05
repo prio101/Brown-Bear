@@ -4,6 +4,7 @@ import type { ApiError } from "@/lib/api/client";
 import { relativeAge } from "@/lib/api/freshness";
 import type { PanelState } from "@/lib/api/panel";
 
+import { RelativeTime } from "./RelativeTime";
 import { Text } from "./Text";
 
 /**
@@ -73,7 +74,9 @@ export function PanelEmpty({ reason, fetchedAt }: { reason: string; fetchedAt: D
         {reason}
       </Text>
       <Text role="label-small" style={{ color: "var(--bb-on-surface-variant)" }}>
-        Nothing to show yet — checked {relativeAge(fetchedAt)}. This is not an error.
+        Nothing to show yet — checked{" "}
+        <RelativeTime iso={fetchedAt.toISOString()} initial={relativeAge(fetchedAt)} />. This
+        is not an error.
       </Text>
     </div>
   );
@@ -110,7 +113,8 @@ export function PanelError({ error }: { error: ApiError }) {
         {nextStep[error.kind]}
       </Text>
       <Text role="label-small" style={{ color: "var(--bb-on-surface-variant)" }}>
-        Last checked {relativeAge(error.at)}.
+        Last checked{" "}
+        <RelativeTime iso={error.at.toISOString()} initial={relativeAge(error.at)} />.
       </Text>
     </div>
   );

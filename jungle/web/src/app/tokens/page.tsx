@@ -1,3 +1,4 @@
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { BarChart } from "@/components/charts/BarChart";
 import { ChartFrame, ChartTable } from "@/components/charts/ChartFrame";
 import { LineChart } from "@/components/charts/LineChart";
@@ -106,6 +107,11 @@ export default async function Tokens({
     "No aggregation runs recorded yet.",
   );
 
+  // The server's render time is the honest answer to "how old is this":
+  // after router.refresh() it moves on its own, and it does not move when a
+  // refresh fails (BB-203).
+  const renderedAt = new Date().toISOString();
+
   return (
     <div className="bb-shell">
       <Nav current="/tokens" />
@@ -114,6 +120,7 @@ export default async function Tokens({
           <Text role="headline-medium" as="h1">
             Tokens
           </Text>
+          <AutoRefresh renderedAt={renderedAt} />
         </header>
 
         {/* One filter row, above the charts, never interleaved. */}

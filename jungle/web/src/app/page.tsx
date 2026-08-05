@@ -1,3 +1,4 @@
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { LivenessBanner, type LivenessState } from "@/components/LivenessBanner";
 import { Nav } from "@/components/Nav";
 import { Panel, PanelBody } from "@/components/Panel";
@@ -94,6 +95,11 @@ export default async function Overview() {
   );
   const systemState = toPanelState(system, (data) => data.current === null, "No host snapshots yet.");
 
+  // The server's render time is the honest answer to "how old is this":
+  // after router.refresh() it moves on its own, and it does not move when a
+  // refresh fails (BB-203).
+  const renderedAt = new Date().toISOString();
+
   return (
     <div className="bb-shell">
       <Nav current="/" />
@@ -102,6 +108,7 @@ export default async function Overview() {
           <Text role="headline-medium" as="h1">
             Overview
           </Text>
+          <AutoRefresh renderedAt={renderedAt} />
         </header>
 
         <LivenessBanner

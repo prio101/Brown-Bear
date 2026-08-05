@@ -1,3 +1,4 @@
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { Nav } from "@/components/Nav";
 import { Panel, PanelBody } from "@/components/Panel";
 import { StatusChip } from "@/components/StatusChip";
@@ -37,6 +38,11 @@ export default async function CollectionsPage() {
     "ChromaDB has no collections. Retrieval and the semantic cache both return nothing until one exists.",
   );
 
+  // The server's render time is the honest answer to "how old is this":
+  // after router.refresh() it moves on its own, and it does not move when a
+  // refresh fails (BB-203).
+  const renderedAt = new Date().toISOString();
+
   return (
     <div className="bb-shell">
       <Nav current="/collections" />
@@ -45,6 +51,7 @@ export default async function CollectionsPage() {
           <Text role="headline-medium" as="h1">
             Collections
           </Text>
+          <AutoRefresh renderedAt={renderedAt} />
           {gateway.ok ? (
             <Text role="body-medium" style={{ color: "var(--bb-on-surface-variant)" }}>
               {`Live embedding model ${gateway.data.embedding_model} · cache threshold ${gateway.data.threshold} · top-k ${gateway.data.top_k} · TTL ${gateway.data.ttl_days}d`}

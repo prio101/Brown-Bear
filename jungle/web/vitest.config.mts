@@ -13,7 +13,10 @@ export default defineConfig({
     },
   },
   test: {
+    // Node by default; the component tests opt into jsdom with a per-file
+    // `@vitest-environment` docblock, so the data-layer suite keeps starting
+    // instantly rather than booting a DOM it never touches.
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

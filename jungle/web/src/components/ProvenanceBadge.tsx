@@ -6,6 +6,8 @@ import {
 } from "@/lib/api/provenance";
 import { relativeAge } from "@/lib/api/freshness";
 
+import { RelativeTime } from "./RelativeTime";
+
 /**
  * Where a number came from and how old it is (DESIGN-BOOK.md §10.1).
  *
@@ -37,7 +39,15 @@ export function ProvenanceBadge({
       <span aria-hidden="true">{PROVENANCE_MARKER[kind]}</span>
       <span>{PROVENANCE_LABEL[kind]}</span>
       <span aria-hidden="true">·</span>
-      <span>{relativeAge(fetchedAt, now)}</span>
+      {/* Ticks client-side (BB-203). A server-computed string froze at "just now"
+          and kept asserting it about data that was minutes old — the exact
+          opposite of what a freshness badge is for. */}
+      <span>
+        <RelativeTime
+          iso={fetchedAt.toISOString()}
+          initial={relativeAge(fetchedAt, now)}
+        />
+      </span>
     </span>
   );
 }

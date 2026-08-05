@@ -1,3 +1,4 @@
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { ChartFrame, ChartTable } from "@/components/charts/ChartFrame";
 import { formatClock, type Series } from "@/components/charts/geometry";
 import { LineChart } from "@/components/charts/LineChart";
@@ -60,6 +61,11 @@ export default async function CachePage({
 
   const cold = cache.ok && (cache.data.samples === 0 || cache.data.current === null);
 
+  // The server's render time is the honest answer to "how old is this":
+  // after router.refresh() it moves on its own, and it does not move when a
+  // refresh fails (BB-203).
+  const renderedAt = new Date().toISOString();
+
   return (
     <div className="bb-shell">
       <Nav current="/cache" />
@@ -68,6 +74,7 @@ export default async function CachePage({
           <Text role="headline-medium" as="h1">
             Cache
           </Text>
+          <AutoRefresh renderedAt={renderedAt} />
         </header>
 
         <WindowFilter current={minutes} basePath="/cache" />

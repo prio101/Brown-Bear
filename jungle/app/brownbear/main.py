@@ -38,6 +38,7 @@ def create_app() -> FastAPI:
     )
 
     from brownbear.routers import (
+        api_doc,
         design,
         export,
         ext,
@@ -59,6 +60,9 @@ def create_app() -> FastAPI:
     app.include_router(ollama_proxy.router)
     # Public, unauthenticated at the edge (BB-109).
     app.include_router(design.router)
+    # Authenticated at the edge (spec 006): an endpoint inventory describes the
+    # attack surface, which design tokens do not.
+    app.include_router(api_doc.router)
     # No router owns "/" any more: the Next.js frontend serves every page, and the
     # edge proxies them to web:3000 (BB-104, BB-110).
 

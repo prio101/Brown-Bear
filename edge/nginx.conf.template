@@ -158,6 +158,19 @@ server {
         include /etc/nginx/proxy_timeouts.conf;
     }
 
+    # ---- authenticated: API documentation (spec 006) ----------------------
+    # Authenticated, not public like /design: this enumerates every published
+    # endpoint, and an inventory describes the attack surface where design values
+    # do not. Static — it renders the route contract and touches no service.
+    location /api-doc/ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/api-doc/;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
     # ---- authenticated: read-only API the pages consume ------------------
     # GET only. The write paths (PUT /api/settings, POST
     # /api/tokens/aggregate) fall through to the default deny, so a remote

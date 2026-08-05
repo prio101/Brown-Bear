@@ -32,6 +32,8 @@ historical token charts; `/metrics` scrapes clean.
 | M1–M7 | M8's SDK wrappers. Its *reporting* half landed as spec 005 §5.5 (`POST /ext/exchange`) |
 | D1t–D9t | Alert *evaluation* (H2) — thresholds are stored and editable, nothing fires yet |
 | **005 §5.1–5.6** | PDF ingest, queryable near-misses, dirty-window re-aggregation, in-app per-key auth, §5.7 dashboard |
+| **Sprint 1 (BB-101–110)** — Next.js dashboard, design system, public design book | Browser verification of every page (nobody has opened one) |
+| **006** — API doc at `/api-doc/v1`, edge contract documented with a drift check | Decide whether to disable FastAPI's CDN-dependent `/docs` and `/redoc` |
 
 **Phase 4 started early (2026-07-31).** The context gateway is live and reachable through the
 tunnel: embeddings work, both collections exist in cosine space, and `/ext/documents`,

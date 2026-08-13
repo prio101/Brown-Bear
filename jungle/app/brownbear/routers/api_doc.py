@@ -241,6 +241,11 @@ a:focus-visible, nav a:focus-visible {{
     </p>
     <p>{summary}. Schema: <a href="/api-doc/v1/openapi.json">openapi.json</a>, annotated
       with the same reachability.</p>
+    <p>This page says what you may call. The
+      <a href="/api-doc/v1/handbook">Memory Handbook</a> says what happens when you
+      do — the four layers, the order they are consulted in, and which of them can
+      return an answer. Also as
+      <a href="/api-doc/v1/handbook.md">Markdown</a> for a model on another machine.</p>
     <div class="auth">
       <p><strong>Authentication</strong> — one shared secret, two accepted forms.
       Machines send a bearer token; browsers cannot set a header from the address bar,

@@ -16,8 +16,14 @@ Brown Bear being down degrades context; it never blocks your work.
 **Every prompt and every answer leaves the machine.** The context hook sends
 your prompt over the internet to Brown Bear; the Stop hook sends the prompt and
 the full response, and stores them in ChromaDB by default. That is the point of
-the feature, but decide deliberately — and note the current tunnel is a
-`trycloudflare.com` URL whose hostname is not secret, only unlisted.
+the feature, but decide deliberately.
+
+The gateway is at a **permanent** hostname, `brownbear.frostmangobox.com`. That
+is what makes a memory graph across machines workable, but be clear about the
+trade: the address is now stable, guessable, and durably reachable, where a
+`trycloudflare.com` URL was merely unlisted. Obscurity is no longer part of the
+defence, so `BB_EDGE_TOKEN` is the whole of it — treat it as the only thing
+standing between the internet and every prompt you have ever sent.
 
 Use `BB_NO_STORE=1` to meter without storing, and `BB_STORE_MIN_CHARS` to keep
 trivial answers out of the cache.
@@ -48,7 +54,7 @@ written into `settings.json`. Put this in your shell profile
 (`~/.zshrc`, `~/.bashrc`):
 
 ```bash
-export BB_GATEWAY_URL="https://<your-tunnel>.trycloudflare.com"
+export BB_GATEWAY_URL="https://brownbear.frostmangobox.com"
 export BB_EDGE_TOKEN="<the BB_EDGE_TOKEN from Brown Bear's .env>"
 export BB_MODEL="claude-opus-5"     # see the warning below — set this
 ```
@@ -112,7 +118,7 @@ resolve pricing for the reported usage.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BB_GATEWAY_URL` | — | Tunnel base URL. **Unset = hooks disabled** |
+| `BB_GATEWAY_URL` | — | Gateway base URL, fixed at `https://brownbear.frostmangobox.com`. **Unset = hooks disabled** |
 | `BB_EDGE_TOKEN` | — | Shared edge secret. **Unset = hooks disabled** |
 | `BB_MODEL` | `claude` | Cache scope + pricing key. Keep identical everywhere |
 | `BB_PROJECT` | git repo name | Cache scope. Defaults to the repository's directory name |

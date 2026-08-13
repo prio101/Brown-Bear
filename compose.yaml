@@ -84,12 +84,28 @@ services:
     restart: unless-stopped
 
   # ==================== CLOUDFLARE TUNNEL ====================
-  # Both tunnel services sit behind compose profiles, so neither starts with a
-  # plain `docker compose up` — nothing gets published by accident.
+  # THE ACTIVE TUNNEL IS NOT IN THIS FILE.
   #
-  # Persistent, named tunnel (recommended). Create it in the Cloudflare
-  # dashboard, set the token in .env, point its public hostname at
-  # http://edge:8081, then:  docker compose --profile tunnel up -d
+  # The public URL is fixed at  https://brownbear.frostmangobox.com  and is
+  # served by the host's own cloudflared (systemd unit `cloudflared.service`,
+  # a named tunnel run from /etc/cloudflared/token). Its public hostname routes
+  # to http://localhost:8081 — this file's `edge`, reached through the
+  # 127.0.0.1:8081 binding, since that cloudflared runs outside the compose
+  # network. Ingress is managed remotely in the Zero Trust dashboard, so there
+  # is nothing here to change when a route changes:
+  #     systemctl status cloudflared
+  #     journalctl -u cloudflared -f
+  #
+  # Both services below sit behind compose profiles, so neither starts with a
+  # plain `docker compose up` — nothing gets published by accident, and in the
+  # normal case neither should ever be started at all.
+  #
+  # Alternative, currently unused: run the named tunnel inside compose instead
+  # of on the host. Only if you deliberately want the tunnel to live and die
+  # with the stack. Set CLOUDFLARE_TUNNEL_TOKEN in .env, point that tunnel's
+  # public hostname at http://edge:8081 (not localhost:8081 — this one *is* on
+  # the compose network), then:  docker compose --profile tunnel up -d
+  # Do not run this at the same time as the host service for the same tunnel.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
@@ -105,9 +121,15 @@ services:
       - edge
     restart: unless-stopped
 
-  # Throwaway tunnel for testing: no account, random *.trycloudflare.com URL,
-  # gone when the container stops. The URL is printed in its logs.
+  # Throwaway tunnel, for local testing ONLY: no account, random
+  # *.trycloudflare.com URL, gone when the container stops. The URL is printed
+  # in its logs.
   #   docker compose --profile quicktunnel up -d && docker compose logs -f cloudflared-quick
+  #
+  # Never hand this URL to another machine. It changes on every restart, and the
+  # client hooks fail open — so when it dies, every remote node silently stops
+  # contributing to the memory graph instead of reporting an error. That is
+  # precisely what the fixed hostname above exists to prevent.
   cloudflared-quick:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-quick

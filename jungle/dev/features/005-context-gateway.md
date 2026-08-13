@@ -206,19 +206,36 @@ compose network — bypasses it completely. Spec 002 §2.3 is still the real fix
 
 #### Runbook
 
-Persistent tunnel (survives restarts, stable hostname):
+Persistent tunnel — **this is the live configuration.** The public URL is fixed
+at `https://brownbear.frostmangobox.com` and needs no per-restart action.
 
-1. In the Cloudflare Zero Trust dashboard: **Networks → Tunnels → Create a tunnel**
-2. Copy the token into `.env` as `CLOUDFLARE_TUNNEL_TOKEN`
-3. Add a public hostname routed to **`http://edge:8081`** — not `app:8080`
-4. `docker compose --profile tunnel up -d`
+It is served by the *host* cloudflared, not by a compose service:
 
-Throwaway tunnel (no account, random URL, gone on stop):
+```bash
+systemctl status cloudflared     # unit: cloudflared.service
+journalctl -u cloudflared -f     # named tunnel, token at /etc/cloudflared/token
+```
+
+Its public hostname routes to **`http://localhost:8081`** — the edge, never
+`app:8080`. `localhost` rather than `edge:8081` because the host cloudflared
+runs outside the compose network and reaches the edge via the `127.0.0.1:8081`
+binding. Ingress is managed remotely in the Zero Trust dashboard, so routing
+changes are made there, not in this repo.
+
+Compose's `cloudflared` service (profile `tunnel`, origin `http://edge:8081`,
+token from `.env`) is the unused alternative, for moving the tunnel into the
+stack. Do not run it and the host unit against the same tunnel.
+
+Throwaway tunnel (no account, random URL, gone on stop) — **local testing only,
+never for another machine:**
 
 ```bash
 docker compose --profile quicktunnel up -d
 docker compose logs cloudflared-quick | grep trycloudflare.com   # the URL
 ```
+
+Its URL changes on every restart, and the client hooks fail open — so a dead
+quick tunnel silently detaches every remote node rather than raising an error.
 
 Neither profile starts with a plain `docker compose up`.
 

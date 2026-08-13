@@ -168,6 +168,22 @@ CONTRACT: tuple[Endpoint, ...] = (
         "GET", "/api-doc/v1/openapi.json", Reach.AUTHENTICATED, "Documentation",
         "The OpenAPI schema, annotated with the reachability shown here.",
     ),
+    Endpoint(
+        "GET", "/api-doc/v1/handbook", Reach.AUTHENTICATED, "Documentation",
+        "The memory handbook: the four layers, the order they are consulted in, and "
+        "what each will and will not return. Answers what the endpoint list cannot — "
+        "which store produced a result.",
+    ),
+    Endpoint(
+        "GET", "/api-doc/v1/handbook.md", Reach.AUTHENTICATED, "Documentation",
+        "The handbook as raw Markdown. This is the one a model on another machine "
+        "should read: the rendered page would spend its context on styling.",
+    ),
+    Endpoint(
+        "GET", "/api-doc/v1/handbook.json", Reach.AUTHENTICATED, "Documentation",
+        "The handbook structured for a program: layers, lookup order, controls and "
+        "guarantees as fields rather than prose.",
+    ),
 )
 
 #: Group presentation order.

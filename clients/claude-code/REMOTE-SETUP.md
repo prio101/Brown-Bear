@@ -6,9 +6,13 @@ Follow this on the machine you want to connect. Takes about two minutes.
 
 | Value | Where to get it |
 |---|---|
-| Tunnel URL | On the Brown Bear host: `docker compose logs cloudflared-quick \| grep trycloudflare` |
+| Gateway URL | Fixed: **`https://brownbear.frostmangobox.com`**. Nothing to look up |
 | Edge token | On the Brown Bear host: `grep BB_EDGE_TOKEN /home/prio/work/Brown-Bear/.env` |
 | Model id | Must be **identical** on every machine. Use `claude-opus-5` |
+
+The URL is permanent — a named Cloudflare tunnel, not a `trycloudflare.com`
+quick tunnel. It survives host restarts and reboots, so once a machine is set up
+you never re-point it.
 
 The machine needs `python3` and `curl`. It does **not** need `jq`, `pip`, Docker,
 or network access to anything but the tunnel.
@@ -24,7 +28,7 @@ current `settings.json`, and verifies the gateway.
 scp you@bb-host:~/work/Brown-Bear/clients/claude-code/install-remote.sh .
 #   ...or open the file, copy it, and paste into a new file on the target machine
 
-export BB_GATEWAY_URL="https://<your-tunnel>.trycloudflare.com"
+export BB_GATEWAY_URL="https://brownbear.frostmangobox.com"
 export BB_EDGE_TOKEN="<the token>"
 export BB_MODEL="claude-opus-5"
 
@@ -50,7 +54,7 @@ chmod +x ~/.claude/bb/bb_context.py ~/.claude/bb/bb_exchange.py
 
 ```bash
 cat > ~/.claude/bb/env.sh <<'EOF'
-export BB_GATEWAY_URL="https://<your-tunnel>.trycloudflare.com"
+export BB_GATEWAY_URL="https://brownbear.frostmangobox.com"
 export BB_EDGE_TOKEN="<the token>"
 export BB_MODEL="claude-opus-5"
 EOF
@@ -163,8 +167,21 @@ answer as context and Claude still answers — you gain grounding, not spend.
 `BB_CACHE_MODE=block` is the only mode that costs zero tokens, and the only one
 where a wrong hit is shown to you as though it were an answer.
 
-**A quick tunnel URL dies when its container stops** and does not come back on
-its own. When it changes, update `BB_GATEWAY_URL` in `env.sh` on every machine.
+**The URL is stable, so `env.sh` is write-once.** `BB_GATEWAY_URL` should never
+need changing again. If the gateway goes unreachable, the fault is on the host —
+the tunnel, the edge, or the app — not on this machine, so don't start by
+editing config here. On the host:
+
+```bash
+systemctl status cloudflared          # tunnel up? connections registered?
+docker compose ps                     # edge and app running?
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8081/ext/health
+#   401 = edge healthy and correctly refusing an unauthenticated request
+#   000 = edge is down
+```
+
+Because the hooks fail open, a broken gateway looks exactly like a quiet one
+from the client side. Run the verification above rather than assuming.
 
 ## Uninstall
 

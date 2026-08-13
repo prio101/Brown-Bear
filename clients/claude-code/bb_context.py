@@ -13,7 +13,7 @@ silent `command -v jq || exit 0` makes the hook look configured while doing
 nothing. The standard library is enough.
 
 Configuration (environment):
-  BB_GATEWAY_URL   required, e.g. https://xxx.trycloudflare.com — unset disables
+  BB_GATEWAY_URL   required, https://brownbear.frostmangobox.com — unset disables
   BB_EDGE_TOKEN    required, the shared edge secret             — unset disables
   BB_TIMEOUT       seconds to wait for the gateway (default 6)
   BB_CACHE_MODE    inject (default) | block

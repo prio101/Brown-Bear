@@ -9,7 +9,7 @@
 # Requires: python3, curl. Does NOT require jq or pip.
 #
 # Set these three first, or the script will prompt for them.
-#   BB_GATEWAY_URL  the tunnel URL
+#   BB_GATEWAY_URL  the gateway URL — https://brownbear.frostmangobox.com
 #   BB_EDGE_TOKEN   the shared edge secret
 #   BB_MODEL        model id — MUST be identical on every machine
 
@@ -22,7 +22,15 @@ command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 command -v curl    >/dev/null || { echo "curl is required"; exit 1; }
 
 # ---- 1. collect configuration -------------------------------------------
-[ -n "${BB_GATEWAY_URL:-}" ] || read -rp "Brown Bear tunnel URL: " BB_GATEWAY_URL
+# The gateway lives at a permanent named-tunnel hostname, so this is a constant
+# rather than something to look up per install. Still overridable by exporting
+# BB_GATEWAY_URL, or by answering the prompt — needed only if you are pointing a
+# machine at a different Brown Bear instance.
+BB_GATEWAY_DEFAULT="https://brownbear.frostmangobox.com"
+if [ -z "${BB_GATEWAY_URL:-}" ]; then
+  read -rp "Brown Bear gateway URL [$BB_GATEWAY_DEFAULT]: " BB_GATEWAY_URL
+  BB_GATEWAY_URL="${BB_GATEWAY_URL:-$BB_GATEWAY_DEFAULT}"
+fi
 [ -n "${BB_EDGE_TOKEN:-}"  ] || read -rsp "Edge token: " BB_EDGE_TOKEN && echo
 BB_MODEL="${BB_MODEL:-claude-opus-5}"
 BB_GATEWAY_URL="${BB_GATEWAY_URL%/}"
@@ -46,7 +54,7 @@ silent `command -v jq || exit 0` makes the hook look configured while doing
 nothing. The standard library is enough.
 
 Configuration (environment):
-  BB_GATEWAY_URL   required, e.g. https://xxx.trycloudflare.com — unset disables
+  BB_GATEWAY_URL   required, https://brownbear.frostmangobox.com — unset disables
   BB_EDGE_TOKEN    required, the shared edge secret             — unset disables
   BB_TIMEOUT       seconds to wait for the gateway (default 6)
   BB_CACHE_MODE    inject (default) | block

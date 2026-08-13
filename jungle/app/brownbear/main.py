@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
         design,
         export,
         ext,
+        handbook,
         health,
         metrics,
         monitoring,
@@ -63,6 +64,9 @@ def create_app() -> FastAPI:
     # Authenticated at the edge (spec 006): an endpoint inventory describes the
     # attack surface, which design tokens do not.
     app.include_router(api_doc.router)
+    # Same prefix, separate module: the memory handbook explains what the endpoint
+    # list cannot — which of the four stores answered, and what it guarantees.
+    app.include_router(handbook.router)
     # No router owns "/" any more: the Next.js frontend serves every page, and the
     # edge proxies them to web:3000 (BB-104, BB-110).
 

@@ -138,21 +138,29 @@ def read_transcript(path: Path) -> dict:
     # Default to the true total, because this is a usage tracker and that is the
     # real volume. Set BB_EXCLUDE_CACHE_READS=1 to report only the tokens billed
     # near full rate, which tracks cost far more closely.
-    keys = ["input_tokens", "cache_creation_input_tokens"]
-    if not os.environ.get("BB_EXCLUDE_CACHE_READS"):
-        keys.append("cache_read_input_tokens")
-
-    tokens_in = 0
-    for key in keys:
+    def bucket(key: str) -> int:
         value = usage.get(key)
-        if isinstance(value, int):
-            tokens_in += value
+        return value if isinstance(value, int) else 0
+
+    fresh = bucket("input_tokens")
+    cache_write = bucket("cache_creation_input_tokens")
+    cache_read = bucket("cache_read_input_tokens")
+
+    # BB_EXCLUDE_CACHE_READS is now a blunt instrument kept only for compatibility.
+    # It used to be the only defence against cache reads being priced at the full
+    # input rate; the server now prices each bucket at its own rate, so dropping
+    # reads understates volume for no benefit.
+    if os.environ.get("BB_EXCLUDE_CACHE_READS"):
+        cache_read = 0
 
     output = usage.get("output_tokens")
     return {
         "prompt": last_user,
         "response": last_assistant,
-        "tokens_in": tokens_in,
+        "tokens_in": fresh + cache_write + cache_read,
+        "tokens_in_fresh": fresh,
+        "tokens_cache_write": cache_write,
+        "tokens_cache_read": cache_read,
         "tokens_out": output if isinstance(output, int) else 0,
         "model": model,
     }
@@ -211,6 +219,12 @@ def main() -> int:
         "project": project_for(event),
         "model": model,
         "tokens_in": turn.get("tokens_in") or 0,
+        # The breakdown is what the server prices from. Providers bill these three
+        # at different rates — fresh at par, cache writes above it, cache reads at a
+        # fraction — so sending only the sum overstates a cache-heavy session badly.
+        "tokens_in_fresh": turn.get("tokens_in_fresh") or 0,
+        "tokens_cache_write": turn.get("tokens_cache_write") or 0,
+        "tokens_cache_read": turn.get("tokens_cache_read") or 0,
         "tokens_out": turn.get("tokens_out") or 0,
         "request_id": f"cc-{digest}",
         "store": store,

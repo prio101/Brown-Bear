@@ -16,7 +16,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from brownbear import embeddings, gateway, pricing
+from brownbear import embeddings, gateway, pricing, savings
 from brownbear.config import get_settings
 from brownbear.connectors import ollama
 from brownbear.models.tokens import TokenSource
@@ -67,6 +67,10 @@ class ContextIn(_Scoped):
     # retrieval without loosening the cache for everyone.
     k: Annotated[int | None, Field(ge=1, le=50)] = None
     skip_cache: bool = False
+    # What the client will DO with a hit. Only it knows, and the saving is real in
+    # one mode and exactly zero in the other: `block` serves the cached answer in
+    # place of a model call, `inject` adds it as context and the model still runs.
+    cache_mode: Annotated[str, Field(pattern="^(inject|block)$")] = "inject"
 
 
 class ExchangeIn(_Scoped):
@@ -76,6 +80,14 @@ class ExchangeIn(_Scoped):
     model: Annotated[str, Field(min_length=1, max_length=128)] = "unknown"
     tokens_in: Annotated[int, Field(ge=0)] = 0
     tokens_out: Annotated[int, Field(ge=0)] = 0
+    # The input breakdown. Providers bill these three at different rates — fresh at
+    # par, cache writes above it, cache reads at a fraction — so summing them into
+    # tokens_in and pricing at one rate overstates a cache-heavy session badly.
+    # Optional: a client that sends none gets the old flat pricing, recorded as
+    # such rather than silently mixed in with correctly-priced rows.
+    tokens_in_fresh: Annotated[int | None, Field(ge=0)] = None
+    tokens_cache_write: Annotated[int | None, Field(ge=0)] = None
+    tokens_cache_read: Annotated[int | None, Field(ge=0)] = None
     # Dedup key: replaying the same exchange must not double-count usage.
     request_id: str | None = Field(default=None, max_length=128)
     # A client billed by its own provider knows the real cost; the local
@@ -187,6 +199,17 @@ async def context(payload: ContextIn) -> dict[str, Any]:
         )
 
     if cache.get("hit"):
+        # Best-effort and awaited: it is a single insert, and losing the record of
+        # what the memory served would make the savings report quietly incomplete.
+        await savings.record_context_event(
+            project=payload.project,
+            model=payload.model,
+            hit=True,
+            cache_mode=payload.cache_mode,
+            score=cache.get("score"),
+            answer=cache.get("answer"),
+            chunks=[],
+        )
         # A hit is the whole answer; retrieval would be wasted work.
         return {
             "hit": True,
@@ -204,6 +227,15 @@ async def context(payload: ContextIn) -> dict[str, Any]:
         embedding=embedding,
         project=payload.project,
         k=payload.k or gateway.top_k(),
+    )
+    await savings.record_context_event(
+        project=payload.project,
+        model=payload.model,
+        hit=False,
+        cache_mode=payload.cache_mode,
+        score=cache.get("score"),
+        answer=None,
+        chunks=chunks,
     )
     return {
         "hit": False,
@@ -257,6 +289,9 @@ async def exchange(payload: ExchangeIn) -> dict[str, Any]:
             model=payload.model,
             tokens_in=payload.tokens_in,
             tokens_out=payload.tokens_out,
+            tokens_in_fresh=payload.tokens_in_fresh,
+            tokens_cache_write=payload.tokens_cache_write,
+            tokens_cache_read=payload.tokens_cache_read,
             source=TokenSource.remote_api,
             endpoint="/ext/exchange",
             request_id=payload.request_id,

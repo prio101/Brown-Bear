@@ -4,6 +4,7 @@ Cost is resolved and stored at write time, not at read time. Rates change;
 what a call cost when it happened does not.
 """
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -14,6 +15,19 @@ from brownbear.models.tokens import ModelPricing
 
 FALLBACK_MODEL = "*"
 CENT_PRECISION = Decimal("0.000001")
+
+#: Characters per token, for estimating the size of text Brown Bear served.
+#: A rough English average. Everything derived from it is labelled an estimate:
+#: tokenising properly would mean shipping a tokeniser per provider, and the
+#: number is used for reporting what was saved, never for billing anyone.
+CHARS_PER_TOKEN = 4
+
+
+def estimate_tokens(text: str | None) -> int:
+    """Approximate token count for served text. Deliberately crude and labelled."""
+    if not text:
+        return 0
+    return max(1, len(text) // CHARS_PER_TOKEN)
 
 
 def _candidates(model: str) -> list[str]:
@@ -30,14 +44,28 @@ def _candidates(model: str) -> list[str]:
     return names
 
 
-def resolve_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str, str | None]:
-    """Rates plus the pricing row that produced them.
+@dataclass(frozen=True)
+class Rates:
+    """Everything needed to price one call.
 
-    The fourth element is the matched model name, or None when only the ``*``
-    fallback applied. Callers reporting *paid* usage need that distinction: the
-    fallback prices an unknown model at zero, which is right for local
-    inference and wrong for a remote API (spec 005 §5.5).
+    A record rather than a widening tuple: this went from two values to five, and
+    a five-tuple at four call sites is how a multiplier ends up in the currency
+    position without anything failing.
     """
+
+    input_per_1k: Decimal
+    output_per_1k: Decimal
+    currency: str
+    #: None when only the `*` fallback matched. Callers reporting *paid* usage
+    #: need that: the fallback prices an unknown model at zero, right for local
+    #: inference and wrong for a remote API.
+    matched: str | None
+    cache_write_multiplier: Decimal = Decimal("1.25")
+    cache_read_multiplier: Decimal = Decimal("0.10")
+
+
+def resolve(session: Session, model: str) -> Rates:
+    """Full rates for a model, most specific pricing row first."""
     for name in _candidates(model):
         row = session.execute(
             select(ModelPricing)
@@ -50,9 +78,27 @@ def resolve_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str, 
             .limit(1)
         ).scalar_one_or_none()
         if row is not None:
-            matched = None if name == FALLBACK_MODEL else name
-            return row.input_cost_per_1k, row.output_cost_per_1k, row.currency, matched
-    return Decimal("0"), Decimal("0"), "USD", None
+            return Rates(
+                input_per_1k=row.input_cost_per_1k,
+                output_per_1k=row.output_cost_per_1k,
+                currency=row.currency,
+                matched=None if name == FALLBACK_MODEL else name,
+                cache_write_multiplier=row.cache_write_multiplier,
+                cache_read_multiplier=row.cache_read_multiplier,
+            )
+    return Rates(Decimal("0"), Decimal("0"), "USD", None)
+
+
+def resolve_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str, str | None]:
+    """Rates plus the pricing row that produced them.
+
+    The fourth element is the matched model name, or None when only the ``*``
+    fallback applied. Callers reporting *paid* usage need that distinction: the
+    fallback prices an unknown model at zero, which is right for local
+    inference and wrong for a remote API (spec 005 §5.5).
+    """
+    rates = resolve(session, model)
+    return rates.input_per_1k, rates.output_per_1k, rates.currency, rates.matched
 
 
 def get_rates(session: Session, model: str) -> tuple[Decimal, Decimal, str]:
@@ -75,4 +121,44 @@ def calculate_cost(
     cost = (Decimal(tokens_in) / 1000) * input_per_1k + (
         Decimal(tokens_out) / 1000
     ) * output_per_1k
+    return cost.quantize(CENT_PRECISION, rounding=ROUND_HALF_UP)
+
+
+def calculate_bucketed_cost(
+    *,
+    tokens_in_fresh: int,
+    tokens_cache_write: int,
+    tokens_cache_read: int,
+    tokens_out: int,
+    rates: Rates,
+) -> Decimal:
+    """Price each input bucket at its own effective rate.
+
+    This is the correction. Pricing all input at the base rate overstates a
+    cache-heavy session badly: a long Claude Code turn can be a few thousand fresh
+    tokens against millions of cache reads, and reads are billed at a tenth. On
+    this instance the flat rule reported $887 for a month, dominated by a single
+    turn charged $248 for 15.7M input tokens — more than the context window holds,
+    so almost all of it was reads.
+    """
+    base = rates.input_per_1k
+    cost = (
+        (Decimal(tokens_in_fresh) / 1000) * base
+        + (Decimal(tokens_cache_write) / 1000) * base * rates.cache_write_multiplier
+        + (Decimal(tokens_cache_read) / 1000) * base * rates.cache_read_multiplier
+        + (Decimal(tokens_out) / 1000) * rates.output_per_1k
+    )
+    return cost.quantize(CENT_PRECISION, rounding=ROUND_HALF_UP)
+
+
+def calculate_avoided_cost(tokens_avoided: int, rates: Rates) -> Decimal:
+    """What a provider was not paid for output it did not generate.
+
+    Priced at the OUTPUT rate, and only output. When a cached answer is served in
+    place of a model call, the tokens certainly not generated are that answer's.
+    What the call would have cost in *input* is unknowable here — Brown Bear never
+    sees the context the client would have sent — so claiming it would be
+    invention. This under-reports the saving, which is the safe direction.
+    """
+    cost = (Decimal(tokens_avoided) / 1000) * rates.output_per_1k
     return cost.quantize(CENT_PRECISION, rounding=ROUND_HALF_UP)

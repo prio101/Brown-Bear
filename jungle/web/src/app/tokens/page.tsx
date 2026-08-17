@@ -7,10 +7,12 @@ import { Nav } from "@/components/Nav";
 import { Panel, PanelBody } from "@/components/Panel";
 import { PeriodFilter, PERIODS, type Period } from "@/components/PeriodFilter";
 import { StatTile } from "@/components/StatTile";
+import { SavingsCard } from "@/components/SavingsCard";
 import { Text } from "@/components/Text";
 import {
   getAggregation,
   getTokenHistory,
+  getSavings,
   getTokenSummary,
   getTokensByModel,
   getTokensBySource,
@@ -68,12 +70,13 @@ export default async function Tokens({
     ? (requested as Period)
     : "daily";
 
-  const [summary, history, byModel, bySource, aggregation] = await all([
+  const [summary, history, byModel, bySource, aggregation, savings] = await all([
     getTokenSummary(period),
     getTokenHistory(period),
     getTokensByModel(period),
     getTokensBySource(period),
     getAggregation(),
+    getSavings(30),
   ]);
 
   const rows = history.ok ? toSeries(history.data.results) : [];
@@ -301,6 +304,16 @@ export default async function Tokens({
               />
             </ChartFrame>
           </div>
+
+          {/* Placed above Aggregation and below the cost charts on purpose: it is
+              the counterweight to them. The charts show what was spent; this shows
+              what the shared memory contributed, and whether that actually
+              displaced a provider call or merely grounded one. */}
+          <Panel title="Served by the memory">
+            <PanelBody state={toPanelState(savings, () => false, "")}>
+              {(data) => <SavingsCard savings={data} />}
+            </PanelBody>
+          </Panel>
 
           <Panel title="Aggregation">
             <PanelBody state={aggregationState}>

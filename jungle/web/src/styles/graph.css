@@ -356,3 +356,61 @@
   border-radius: 0 var(--bb-radius-sm, 6px) var(--bb-radius-sm, 6px) 0;
 }
 
+/* --- savings card (spec 003 §3.5 rev 2) --------------------------------- */
+
+.bb-savings {
+  display: grid;
+  gap: var(--bb-space-4);
+}
+
+.bb-savings-grid {
+  display: grid;
+  gap: var(--bb-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.bb-savings-figure {
+  display: grid;
+  gap: 2px;
+  padding: var(--bb-space-3);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: var(--bb-surface-container-low);
+}
+
+/* The figure that is actually a saving gets the emphasis, not the larger
+   "served" number beside it. Serving a lot while avoiding nothing is the normal
+   state, and the layout must not imply otherwise. */
+.bb-savings-figure[data-emphasis="true"] {
+  border-color: var(--bb-primary);
+}
+
+.bb-savings-label {
+  color: var(--bb-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.bb-savings-value {
+  font: 400 28px/36px var(--bb-font-sans, system-ui);
+  color: var(--bb-on-surface);
+}
+
+.bb-savings-hint {
+  color: var(--bb-on-surface-variant);
+}
+
+.bb-savings-note {
+  color: var(--bb-on-surface-variant);
+  margin: 0;
+}
+
+.bb-savings-note code {
+  font-family: var(--bb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  background: var(--bb-surface-container);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: 4px;
+  padding: 1px 4px;
+}

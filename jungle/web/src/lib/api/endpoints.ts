@@ -21,6 +21,7 @@ import {
   HealthSchema,
   InfoSchema,
   RecentLogsSchema,
+  SavingsSchema,
   SettingsSchema,
   SystemSchema,
   TokenHistorySchema,
@@ -37,6 +38,7 @@ import {
   type Health,
   type Info,
   type RecentLogs,
+  type Savings,
   type Settings,
   type System,
   type TokenHistory,
@@ -103,3 +105,6 @@ export const getFile = (fileId: string): Promise<ApiResult<FileRecord>> =>
     timeoutMs: GATEWAY_TIMEOUT_MS,
   });
 
+/** What the shared memory served and what it actually avoided. */
+export const getSavings = (days = 30): Promise<ApiResult<Savings>> =>
+  get("/api/tokens/savings", SavingsSchema, { params: { days } });

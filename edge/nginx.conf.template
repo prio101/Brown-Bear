@@ -234,7 +234,7 @@ server {
         include /etc/nginx/proxy_timeouts.conf;
     }
 
-    location ~ ^/api/tokens/(summary|history|by-model|by-source|aggregation)$ {
+    location ~ ^/api/tokens/(summary|history|by-model|by-source|aggregation|savings)$ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }

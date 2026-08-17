@@ -60,6 +60,18 @@ class TokenEvent(Base):
     # Unique so replayed webhook batches deduplicate (spec 003 §3.2).
     # NULL is allowed many times over — locally proxied calls need no id.
     request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # The input breakdown, when the client supplied one. Their sum is tokens_in.
+    # Stored so a cost is auditable rather than one opaque number — without these
+    # a wrongly-priced row cannot be recomputed, which is exactly the position the
+    # rows written before this change are in.
+    tokens_in_fresh: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_cache_write: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_cache_read: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: "flat" — every input token priced at the base rate. "bucketed" — priced by
+    #: bucket. Named rather than inferred: legacy rows are not wrong by accident,
+    #: they were written under a different rule, and restating them silently would
+    #: be a fabrication.
+    pricing_model: Mapped[str] = mapped_column(String(16), nullable=False, default="flat")
     cost_usd: Mapped[Decimal] = mapped_column(
         Numeric(14, 6), nullable=False, default=Decimal("0")
     )
@@ -127,6 +139,22 @@ class ModelPricing(Base):
         Numeric(14, 6), nullable=False, default=Decimal("0")
     )
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="USD")
+    # Prompt-caching multipliers against input_cost_per_1k (spec 003 §3.5 rev 2).
+    #
+    # Providers do not bill the three input buckets alike: a cache *write* costs
+    # more than fresh input because the entry must be created, and a cache *read*
+    # costs a fraction because nothing is reprocessed. Anthropic's published
+    # figures are 1.25x and 0.10x, which are the defaults here.
+    #
+    # Multipliers rather than three absolute rates: they track the base rate when
+    # it changes, and a provider that bills cache reads at par needs one row edited
+    # to 1.0 rather than three kept in sync.
+    cache_write_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4), nullable=False, default=Decimal("1.25")
+    )
+    cache_read_multiplier: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4), nullable=False, default=Decimal("0.10")
+    )
     effective_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 

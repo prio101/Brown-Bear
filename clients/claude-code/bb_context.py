@@ -160,6 +160,10 @@ def main() -> int:
             "prompt": prompt,
             "project": project_for(event),
             "model": os.environ.get("BB_MODEL") or "claude",
+            # Only this side knows whether a hit will replace the model call or
+            # merely ground it, and the saving is real in one case and zero in the
+            # other. Declared so the server can report it honestly.
+            "cache_mode": (os.environ.get("BB_CACHE_MODE") or "inject"),
         },
         timeout,
     )

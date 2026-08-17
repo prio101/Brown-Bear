@@ -17,6 +17,8 @@ from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
+
+from brownbear import savings
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -277,3 +279,22 @@ def trigger_aggregation(
     window rather than double-counting it.
     """
     return catch_up(period, max_buckets)
+
+
+@router.get("/savings")
+async def savings_summary(
+    days: int = Query(30, ge=1, le=365),
+) -> dict[str, Any]:
+    """What the shared memory served, and what it actually saved.
+
+    Deliberately two numbers rather than one. `tokens_served` is content Brown Bear
+    returned and is always real, but it is not a saving: retrieved chunks are added
+    to a prompt and cost input tokens. `tokens_avoided` counts only output a
+    provider never generated, which happens only when a hit is served in place of a
+    model call — `BB_CACHE_MODE=block`. In the default `inject` mode a hit grounds
+    the answer and the model still runs.
+
+    Reporting served volume as money saved would overstate the benefit in exactly
+    the way the flat input rate overstated the cost.
+    """
+    return await savings.summary(days)

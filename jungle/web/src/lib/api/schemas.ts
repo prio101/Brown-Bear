@@ -366,3 +366,21 @@ export const FileListSchema = z.object({
 export type FileRecord = z.infer<typeof FileSchema>;
 export type FileList = z.infer<typeof FileListSchema>;
 
+/* --- memory savings (spec 003 §3.5 rev 2) --------------------------------- */
+
+export const SavingsSchema = z.object({
+  window_days: z.number(),
+  lookups: z.number(),
+  hits: z.number(),
+  /** Null means no lookups. No data is not a 0% hit rate. */
+  hit_rate: z.number().nullable(),
+  chunks_served: z.number(),
+  tokens_served: z.number(),
+  tokens_avoided: z.number(),
+  cost_avoided_usd: z.number(),
+  blocking_hits: z.number(),
+  estimated: z.boolean(),
+  basis: z.string(),
+});
+
+export type Savings = z.infer<typeof SavingsSchema>;

@@ -144,6 +144,13 @@ CONTRACT: tuple[Endpoint, ...] = (
         "reported by a client and is only as trustworthy as that client.",
     ),
     Endpoint(
+        "GET", "/api/tokens/savings", Reach.AUTHENTICATED, "Tokens",
+        "What the shared memory served and what it actually avoided. `tokens_served` "
+        "is content returned and is NOT a saving on its own — retrieved chunks are "
+        "added to a prompt and cost input tokens. `tokens_avoided` counts output a "
+        "provider never generated, only for hits served in place of a model call.",
+    ),
+    Endpoint(
         "GET", "/api/tokens/aggregation", Reach.AUTHENTICATED, "Tokens",
         "Rollup job state: latest completed window per grain, and recent runs.",
     ),

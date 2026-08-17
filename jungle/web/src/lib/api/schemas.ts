@@ -269,3 +269,61 @@ export type Aggregation = z.infer<typeof AggregationSchema>;
 export type Setting = z.infer<typeof SettingSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type ExtHealth = z.infer<typeof ExtHealthSchema>;
+
+/* --- memory graph (BB-301) ----------------------------------------------- */
+
+/** Node `meta` is deliberately loose. It differs per kind — an exchange carries a
+ * model and a TTL, a chunk carries a source and an index — and pinning each shape
+ * here would mean a schema change every time a metadata field is added to the
+ * gateway, for a panel that renders whatever it is given as a definition list. */
+export const GraphNodeSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  label: z.string(),
+  degree: z.number(),
+  meta: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const GraphEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+  kind: z.string(),
+  /** Only ever set on `similar_to`. Null means the edge is a recorded fact. */
+  weight: z.number().nullable(),
+});
+
+export const GraphSchema = z.object({
+  nodes: z.array(GraphNodeSchema),
+  edges: z.array(GraphEdgeSchema),
+  truncated: z.boolean(),
+  limits: z.object({ max_nodes: z.number(), page_size: z.number() }),
+});
+
+export const LogRowSchema = z.object({
+  kind: z.enum(["query", "token"]),
+  id: z.number(),
+  timestamp: z.string().nullable(),
+  collection: z.string().optional(),
+  query_text: z.string().nullable().optional(),
+  latency_ms: z.number().nullable().optional(),
+  result_count: z.number().optional(),
+  model: z.string().optional(),
+  source: z.string().optional(),
+  endpoint: z.string().nullable().optional(),
+  tokens_in: z.number().optional(),
+  tokens_out: z.number().optional(),
+  total_tokens: z.number().optional(),
+  cost_usd: z.number().nullable().optional(),
+});
+
+export const RecentLogsSchema = z.object({
+  rows: z.array(LogRowSchema),
+  count: z.number(),
+});
+
+export type GraphNode = z.infer<typeof GraphNodeSchema>;
+export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
+export type Graph = z.infer<typeof GraphSchema>;
+export type LogRow = z.infer<typeof LogRowSchema>;
+export type RecentLogs = z.infer<typeof RecentLogsSchema>;
+

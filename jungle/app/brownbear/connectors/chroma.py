@@ -170,6 +170,62 @@ async def upsert(
     resp.raise_for_status()
 
 
+async def get_documents(
+    collection_id: str,
+    *,
+    limit: int = 100,
+    offset: int = 0,
+    where: dict[str, Any] | None = None,
+    ids: list[str] | None = None,
+    with_embeddings: bool = False,
+) -> list[dict[str, Any]]:
+    """Documents by id or filter, without a query vector.
+
+    `query` finds what is *near* something; this enumerates what is *there*, which
+    is what building a graph of stored memory needs — you cannot draw the nodes by
+    repeatedly asking for neighbours of a point you do not have yet.
+
+    Embeddings are excluded by default and cost real bandwidth when included: 768
+    floats per document. Only the similarity step asks for them, and only for the
+    one node it is expanding.
+    """
+    body: dict[str, Any] = {
+        "limit": max(1, limit),
+        "offset": max(0, offset),
+        "include": ["documents", "metadatas"] + (["embeddings"] if with_embeddings else []),
+    }
+    if where:
+        body["where"] = where
+    if ids:
+        body["ids"] = ids
+
+    settings = get_settings()
+    resp = await get_http_client().post(
+        f"{collections_path()}/{collection_id}/get",
+        json=body,
+        timeout=settings.embedding_timeout_seconds,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+
+    # `get` returns flat lists, unlike `query`, which nests one level per query
+    # vector. Handling both shapes in one helper would hide that difference.
+    doc_ids = payload.get("ids") or []
+    docs = payload.get("documents") or []
+    metas = payload.get("metadatas") or []
+    vectors = payload.get("embeddings") or []
+
+    return [
+        {
+            "id": doc_ids[i],
+            "document": docs[i] if i < len(docs) else None,
+            "metadata": metas[i] if i < len(metas) else {},
+            "embedding": vectors[i] if i < len(vectors) else None,
+        }
+        for i in range(len(doc_ids))
+    ]
+
+
 async def query(
     collection_id: str,
     *,

@@ -11,6 +11,7 @@
 @import "./interaction.css";
 @import "./nav.css";
 @import "./charts.css";
+@import "./graph.css";
 
 *,
 *::before,

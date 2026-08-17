@@ -42,8 +42,10 @@ def create_app() -> FastAPI:
         design,
         export,
         ext,
+        graph,
         handbook,
         health,
+        logs,
         metrics,
         monitoring,
         ollama_proxy,
@@ -59,16 +61,11 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(ext.router)
     app.include_router(ollama_proxy.router)
-    # Public, unauthenticated at the edge (BB-109).
-    app.include_router(design.router)
-    # Authenticated at the edge (spec 006): an endpoint inventory describes the
-    # attack surface, which design tokens do not.
-    app.include_router(api_doc.router)
-    # Same prefix, separate module: the memory handbook explains what the endpoint
-    # list cannot — which of the four stores answered, and what it guarantees.
-    app.include_router(handbook.router)
-    # No router owns "/" any more: the Next.js frontend serves every page, and the
-    # edge proxies them to web:3000 (BB-104, BB-110).
+    # BB-301. Two shapes of the same question, split by the shape of the data:
+    # memory is a few dozen connected documents and is served as a graph; logs are
+    # tens of thousands of ordered rows and are streamed.
+    app.include_router(graph.router)
+    app.include_router(logs.router)
 
     @app.get("/api/info")
     async def info() -> dict:

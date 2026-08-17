@@ -15,8 +15,10 @@ import {
   CacheSchema,
   CollectionsSchema,
   ExtHealthSchema,
+  GraphSchema,
   HealthSchema,
   InfoSchema,
+  RecentLogsSchema,
   SettingsSchema,
   SystemSchema,
   TokenHistorySchema,
@@ -27,8 +29,10 @@ import {
   type Cache,
   type Collections,
   type ExtHealth,
+  type Graph,
   type Health,
   type Info,
+  type RecentLogs,
   type Settings,
   type System,
   type TokenHistory,
@@ -73,3 +77,13 @@ export const getSettings = (): Promise<ApiResult<Settings>> =>
 
 export const getExtHealth = (options: GetOptions = {}): Promise<ApiResult<ExtHealth>> =>
   get("/ext/health", ExtHealthSchema, { timeoutMs: GATEWAY_TIMEOUT_MS, ...options });
+
+/** The memory graph (BB-301). Slower than a row lookup — it reads every document
+ * in both collections — so it gets the gateway's longer timeout rather than the
+ * 5s default meant for counters. */
+export const getGraph = (): Promise<ApiResult<Graph>> =>
+  get("/api/graph", GraphSchema, { timeoutMs: GATEWAY_TIMEOUT_MS });
+
+export const getRecentLogs = (limit?: number): Promise<ApiResult<RecentLogs>> =>
+  get("/api/logs/recent", RecentLogsSchema, { params: { limit } });
+

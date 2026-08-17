@@ -138,7 +138,10 @@ server {
         include /etc/nginx/proxy_timeouts.conf;
     }
 
-    location ~ ^/(tokens|cache|collections|settings)$ {
+    # Dashboard pages served by Next.js. `graph` and `logs` are BB-301; both are
+    # pages, not API routes — the data they render comes from /api/graph and
+    # /api/logs, which are published separately above.
+    location ~ ^/(tokens|cache|collections|settings|graph|logs)$ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
@@ -201,6 +204,46 @@ server {
         proxy_pass http://app:8080$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # ---- authenticated: memory graph (BB-301) -----------------------------
+    # Two paths, one regex: the overview and a single node's neighbourhood. GET
+    # only — the graph is a view of stored memory, and nothing here writes.
+    location ~ ^/api/graph(/node)?$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        # Expanding a node runs a nearest-neighbour query against Chroma, which is
+        # a vector search rather than a row lookup.
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    location = /api/logs/recent {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/api/logs/recent;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
+    }
+
+    # ---- authenticated: log stream (BB-301) -------------------------------
+    # Server-Sent Events. Two things make this work and both are easy to undo:
+    #
+    #   proxy_buffering off  — in proxy_common.conf. With buffering on, nginx holds
+    #                          each event until its buffer fills, so a live stream
+    #                          arrives in silent batches and looks broken.
+    #   the long timeouts    — the app sends a heartbeat every 15s, comfortably
+    #                          inside 600s, so an idle stream is never reaped.
+    location = /api/logs/stream {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://app:8080/api/logs/stream;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts_long.conf;
     }
 
     # ---- authenticated: inference ----------------------------------------

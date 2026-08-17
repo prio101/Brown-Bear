@@ -1,0 +1,245 @@
+/* Memory graph and log stream (BB-301).
+ *
+ * The graph canvas is a fixed deep surface rather than a themed one, matching
+ * DESIGN-BOOK.md §2.2 where chart surfaces are deliberately not themed: the node
+ * palette has to stay legible against a known background, and re-tuning six
+ * accent colours for two themes would make one of them the worse compromise.
+ * Everything around the canvas — chips, detail panel, captions — is themed as
+ * usual.
+ */
+
+.bb-graph-layout {
+  display: grid;
+  gap: var(--bb-space-4);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .bb-graph-layout {
+    /* Detail panel fixed rather than fractional: it holds prose, and a column
+       that grows with the viewport gives unreadably long lines on a wide screen. */
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .bb-graph-detail {
+    position: sticky;
+    top: var(--bb-space-4);
+    max-height: calc(100vh - var(--bb-space-8));
+    overflow-y: auto;
+  }
+}
+
+.bb-graph-canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1100 / 720;
+  border: 1px solid #1b2338;
+  border-radius: var(--bb-radius-md);
+  background: #080b14;
+  touch-action: none;
+  cursor: grab;
+  display: block;
+}
+
+.bb-graph-canvas:active {
+  cursor: grabbing;
+}
+
+/* Focus must be visible on an SVG node, which takes no default outline. */
+.bb-graph-canvas g[role="button"]:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.bb-node-label {
+  font: 500 10px var(--bb-font-sans, system-ui);
+  fill: #c8d2e8;
+  paint-order: stroke;
+  stroke: #080b14;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* Motion is decoration here, so it goes away when the reader has asked for less
+   of it. The dash pattern still distinguishes a computed edge without it. */
+@media (prefers-reduced-motion: no-preference) {
+  .bb-edge-semantic {
+    animation: bb-edge-flow 1.4s linear infinite;
+  }
+
+  .bb-node-pulse {
+    animation: bb-pulse 2s ease-in-out infinite;
+  }
+
+  .bb-node-spin {
+    animation: bb-spin 1.6s linear infinite;
+  }
+}
+
+@keyframes bb-edge-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+
+@keyframes bb-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes bb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bb-graph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bb-space-2);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bb-outline-variant);
+  background: var(--bb-surface-container);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.bb-graph-chip[data-off="true"] {
+  background: transparent;
+  opacity: 0.45;
+}
+
+.bb-graph-swatch {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+}
+
+.bb-graph-link {
+  font: inherit;
+  color: var(--bb-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bb-graph-detail {
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  padding: var(--bb-space-4);
+  display: grid;
+  gap: var(--bb-space-3);
+  align-content: start;
+  min-height: 220px;
+}
+
+.bb-graph-detail-kind {
+  color: var(--bb-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.bb-graph-dl {
+  margin: 0;
+  display: grid;
+  gap: var(--bb-space-2);
+}
+
+.bb-graph-field {
+  display: grid;
+  gap: 2px;
+}
+
+.bb-graph-field > dt {
+  color: var(--bb-on-surface-variant);
+}
+
+.bb-graph-field > dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bb-graph-note {
+  color: var(--bb-on-surface-variant);
+  margin: 0;
+}
+
+.bb-graph-preview {
+  margin: 4px 0 0;
+  padding: var(--bb-space-3);
+  border-left: 3px solid var(--bb-primary);
+  background: var(--bb-surface-container-low);
+  border-radius: 0 var(--bb-radius-sm, 6px) var(--bb-radius-sm, 6px) 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* --- log stream --------------------------------------------------------- */
+/* Monospace because the eye scans columns of timestamps and numbers, and rows
+   must not reflow as values change width. Newest first: the stream is read from
+   the top, so a new row arrives where the reader is already looking rather than
+   below the fold. */
+
+.bb-log-stream {
+  font-family: var(--bb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 20px;
+  display: grid;
+  gap: 2px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  padding: var(--bb-space-3);
+  background: var(--bb-surface-container-low);
+}
+
+.bb-log-row {
+  display: grid;
+  grid-template-columns: 88px 64px minmax(0, 1fr);
+  gap: var(--bb-space-3);
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+}
+
+.bb-log-row:hover {
+  border-bottom-color: var(--bb-outline-variant);
+}
+
+/* A row arriving at the top should announce itself; without this it appears
+   instantly and the eye misses that anything changed. */
+@media (prefers-reduced-motion: no-preference) {
+  .bb-log-row[data-fresh="true"] {
+    animation: bb-log-in 420ms ease-out;
+  }
+}
+
+@keyframes bb-log-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.bb-log-detail {
+  overflow-wrap: anywhere;
+}
+
+/* Kind is a text badge, not a colour: the row must be readable in greyscale. */
+.bb-log-kind {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+

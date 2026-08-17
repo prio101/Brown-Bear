@@ -119,6 +119,30 @@ CONTRACT: tuple[Endpoint, ...] = (
         "POST", "/api/tokens/aggregate", Reach.DENIED, "Tokens",
         "Trigger a rollup. Denied through the tunnel — read the state, never trigger it.",
     ),
+    # --- memory graph (BB-301) -----------------------------------------------
+    Endpoint(
+        "GET", "/api/graph", Reach.AUTHENTICATED, "Memory graph",
+        "Stored memory as nodes and edges: collections, projects, models, sources, "
+        "exchanges and chunks, with the structural edges between them. Structural "
+        "only — similarity is computed per node on expand.",
+    ),
+    Endpoint(
+        "GET", "/api/graph/node", Reach.AUTHENTICATED, "Memory graph",
+        "One node with its neighbourhood. For an exchange or a chunk this also "
+        "returns its nearest other memories as weighted `similar_to` edges. Takes "
+        "`?id=<kind>:<value>`.",
+    ),
+    Endpoint(
+        "GET", "/api/logs/recent", Reach.AUTHENTICATED, "Memory graph",
+        "The most recent query and token log rows as one response — the same rows "
+        "the stream opens with, for a client that will not hold a connection.",
+    ),
+    Endpoint(
+        "GET", "/api/logs/stream", Reach.AUTHENTICATED, "Memory graph",
+        "Live query and token logs as Server-Sent Events. Frames are typed: query, "
+        "token, ready, heartbeat, error. Logs stream rather than joining the graph — "
+        "they outnumber stored memories by roughly a thousand to one.",
+    ),
     # --- settings ------------------------------------------------------------
     Endpoint(
         "GET", "/api/settings", Reach.AUTHENTICATED, "Settings",
@@ -189,6 +213,7 @@ CONTRACT: tuple[Endpoint, ...] = (
 #: Group presentation order.
 GROUPS: tuple[str, ...] = (
     "Context gateway",
+    "Memory graph",
     "Tokens",
     "Monitoring",
     "Health",

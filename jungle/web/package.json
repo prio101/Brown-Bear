@@ -14,6 +14,9 @@
   },
   "dependencies": {
     "@material/material-color-utilities": "^0.4.0",
+    "d3-force": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
     "next": "^16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -21,6 +24,9 @@
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.2",
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-zoom": "^3.0.8",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",

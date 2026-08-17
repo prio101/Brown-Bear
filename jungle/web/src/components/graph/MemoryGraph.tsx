@@ -53,6 +53,7 @@ const KIND_STYLE: Record<string, { colour: string; shape: string; label: string 
   source: { colour: "#4db8ff", shape: "rounded", label: "Source document" },
   exchange: { colour: "#ff6b8a", shape: "circle", label: "Exchange (a memory)" },
   chunk: { colour: "#2fe0d0", shape: "ring", label: "Chunk (retrievable)" },
+  file: { colour: "#ffd166", shape: "rounded", label: "File" },
 };
 
 const EDGE_LABEL: Record<string, string> = {

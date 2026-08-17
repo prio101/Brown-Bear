@@ -17,6 +17,11 @@ WORKDIR /app
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY brownbear ./brownbear
+# Spec 007 blob store. Created in the image, owned by the runtime user, BEFORE the
+# volume is mounted over it: Docker seeds a fresh named volume from the image
+# directory it covers, including ownership. Without this the volume is created
+# root-owned and the app — uid 10001 — cannot write a single upload.
+RUN mkdir -p /data/blobs && chown -R brownbear:brownbear /data
 USER brownbear
 EXPOSE 8080
 CMD ["uvicorn", "brownbear.main:app", "--host", "0.0.0.0", "--port", "8080"]

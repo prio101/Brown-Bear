@@ -273,6 +273,31 @@ async def query(
     ]
 
 
+async def delete(collection_id: str, *, where: dict[str, Any]) -> int:
+    """Delete documents matching a filter; returns how many were removed.
+
+    Counted first, because Chroma's delete response does not reliably carry the
+    removed ids and a caller that reports "removed 0" when it removed 400 is worse
+    than one that does not report at all. A `where` is required — an unfiltered
+    delete here would empty a collection.
+    """
+    if not where:
+        raise ValueError("delete requires a where clause")
+
+    settings = get_settings()
+    doomed = await get_documents(collection_id, limit=10_000, where=where)
+    if not doomed:
+        return 0
+
+    resp = await get_http_client().post(
+        f"{collections_path()}/{collection_id}/delete",
+        json={"where": where},
+        timeout=settings.embedding_timeout_seconds,
+    )
+    resp.raise_for_status()
+    return len(doomed)
+
+
 async def check() -> ServiceHealth:
     async def probe() -> dict[str, Any]:
         await heartbeat()

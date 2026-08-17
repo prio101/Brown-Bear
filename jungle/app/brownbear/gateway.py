@@ -436,6 +436,16 @@ async def ingest(
     return {"chunks_stored": len(chunks), "ids": ids, "source": source}
 
 
+async def delete_by_file(collections: Collections, file_id: str) -> int:
+    """Remove every knowledge chunk derived from one file (spec 007 §7.3).
+
+    Deleting a file without this leaves its chunks retrievable, so `/ext/context`
+    keeps serving passages from a document that no longer exists — the corpus
+    quietly disagreeing with itself.
+    """
+    return await chroma.delete(collections.knowledge, where={"file_id": {"$eq": file_id}})
+
+
 async def store_exchange(
     collections: Collections,
     *,

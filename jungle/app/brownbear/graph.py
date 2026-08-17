@@ -216,6 +216,30 @@ def _add_chunk(builder: GraphBuilder, doc: dict[str, Any], collection_node: str)
     )
     builder.add_edge(collection_node, identifier, "contains")
 
+    # A chunk that came from an ingested file hangs off the file, not off a bare
+    # source label: the file has bytes, a preview and a status behind it, which a
+    # free-text source string does not.
+    if file_ref := meta.get("file_id"):
+        fid = builder.add_node(
+            Node(
+                id=node_id("file", str(file_ref)),
+                kind="file",
+                label=str(source or file_ref),
+                meta={
+                    "project": project,
+                    "media_type": meta.get("media_type"),
+                    "source": source,
+                },
+            )
+        )
+        builder.add_edge(identifier, fid, "derived_from")
+        if project:
+            pid = builder.add_node(
+                Node(id=node_id("project", str(project)), kind="project", label=str(project))
+            )
+            builder.add_edge(fid, pid, "belongs_to")
+        return
+
     if source:
         # Scoped by project: two repositories may both hold a README.md, and
         # merging them would invent a relationship that does not exist.
@@ -366,7 +390,7 @@ async def expand(
             # empty `similar` rather than an error page.
             logger.exception("similarity expansion failed for %s", identifier)
 
-    elif kind in {"project", "model", "source", "collection"}:
+    elif kind in {"project", "model", "source", "collection", "file"}:
         # Grouping nodes: re-read the collections filtered to this node's members.
         # A whole Chroma `where` clause, not a bare operator — `{"$eq": x}` without
         # its field name filters nothing and quietly returns the entire collection.
@@ -378,6 +402,8 @@ async def expand(
             # A source id is `project/filename`; the stored metadata holds only the
             # filename, so strip the scope back off before matching.
             where = {"source": {"$eq": value.split("/", 1)[-1]}}
+        elif kind == "file":
+            where = {"file_id": {"$eq": value}}
         else:
             where = None
 
@@ -387,7 +413,7 @@ async def expand(
         ):
             if kind == "model" and name == settings.knowledge_collection:
                 continue  # documents carry no model; a model has no chunks
-            if kind == "source" and name == settings.conversations_collection:
+            if kind in {"source", "file"} and name == settings.conversations_collection:
                 continue
             if kind == "collection" and name != value:
                 continue

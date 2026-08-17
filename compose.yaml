@@ -16,7 +16,12 @@ services:
       - BB_OLLAMA_URL=http://ollama:11434
       - BB_CHROMA_URL=http://chromadb:8000
       - BB_REDIS_URL=redis://:your_strong_password@redis:6379/0
+      - BB_BLOB_DIR=/data/blobs
     volumes:
+      # Spec 007: ingested files. A named volume, not a bind or an image layer —
+      # an uploaded corpus must survive a rebuild, and a 50MB file has no business
+      # inside an image.
+      - bb_blobs:/data/blobs
       # BB-109: the public design book. Mounted read-only rather than baked into
       # the image so editing a document publishes it without a rebuild — a stale
       # published book is worse than none. Read-only: the app never writes here.
@@ -225,6 +230,7 @@ services:
       - redis
 
 volumes:
+  bb_blobs:
   ollama_data:
   chroma_data:
   redis_data:

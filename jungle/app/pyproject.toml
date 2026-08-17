@@ -19,6 +19,8 @@ dependencies = [
     "apscheduler>=3.11",
     "psutil>=6.1",
     "pydantic-settings>=2.7",
+    # Spec 007: FastAPI raises at import time on a File(...) parameter without it.
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

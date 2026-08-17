@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
         design,
         export,
         ext,
+        files,
         graph,
         handbook,
         health,
@@ -66,6 +67,19 @@ def create_app() -> FastAPI:
     # tens of thousands of ordered rows and are streamed.
     app.include_router(graph.router)
     app.include_router(logs.router)
+    # Spec 007. Under /ext/, so the edge publishes it with the same shared secret
+    # as the rest of the gateway and needs no new nginx location.
+    app.include_router(files.router)
+    # Public, unauthenticated at the edge (BB-109).
+    app.include_router(design.router)
+    # Authenticated at the edge (spec 006): an endpoint inventory describes the
+    # attack surface, which design tokens do not.
+    app.include_router(api_doc.router)
+    # Same prefix, separate module: the memory handbook explains what the endpoint
+    # list cannot — which of the four stores answered, and what it guarantees.
+    app.include_router(handbook.router)
+    # No router owns "/" any more: the Next.js frontend serves every page, and the
+    # edge proxies them to web:3000 (BB-104, BB-110).
 
     @app.get("/api/info")
     async def info() -> dict:

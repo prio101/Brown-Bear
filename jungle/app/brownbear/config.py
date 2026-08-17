@@ -79,6 +79,17 @@ class Settings(BaseSettings):
     # bounds peak memory rather than optimising throughput.
     embedding_batch_size: int = 32
 
+    # --- file ingestion (spec 007) ---
+    # Content-addressed blobs on a volume. Not in the image: an uploaded corpus
+    # must survive a rebuild, and a 50MB file has no business in a layer.
+    blob_dir: str = "/data/blobs"
+    # Enforced while streaming, not after. A cap checked once the body has been
+    # read is not a cap — the bytes are already here.
+    max_upload_bytes: int = 50 * 1024 * 1024
+    # Client-supplied thumbnails only; nothing renders server-side. Small because a
+    # preview that is not much smaller than the original is not a preview.
+    max_preview_bytes: int = 2 * 1024 * 1024
+
     # Two collections, never one: a cache hit must be a prior *answer*, and a
     # mixed collection lets a document paragraph clear the threshold and get
     # served as though it were one (spec 005).

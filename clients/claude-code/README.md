@@ -199,3 +199,43 @@ POST /ext/exchange           → store the pair + report usage
 `score` and `matched_prompt` come back on every lookup, hit or miss, so a client
 can apply its own stricter rule and a human can see *why* something matched.
 Repeat a `request_id` and the usage is not counted twice.
+
+## Sending files — `bb_file.py` (spec 007)
+
+Extraction happens **on this machine**. Brown Bear stores the bytes and the text it
+is handed; it runs no OCR, no PDF parser and no vision model, so what a file is
+searchable by is decided entirely here.
+
+```bash
+python3 bb_file.py notes.md                       # text read directly
+python3 bb_file.py scan.pdf --tags ops,retention  # pdftotext if present
+python3 bb_file.py shot.png                       # tesseract if present
+python3 bb_file.py chart.png --extract-cmd 'my-vision-tool {path}'
+```
+
+The content is hashed first and `GET /ext/files/{sha256}/exists` is checked, so a
+file another machine already sent is never uploaded twice.
+
+| Variable | Meaning |
+|---|---|
+| `BB_EXTRACT_CMD` | extraction command template; `{path}` is substituted |
+| `BB_FILE_TIMEOUT` | seconds for extraction and upload (default 120) |
+
+**A missing extractor is not an error.** The file uploads with no text, Brown Bear
+marks it `stored` rather than `indexed`, and it stays downloadable and visible in
+the graph while not being searchable. That is deliberate: a file you can find and
+open beats a refused upload.
+
+**Nothing is verified but the bytes.** The server re-hashes the upload and rejects a
+digest mismatch, so file integrity is checked. Whether the *text* matches those
+bytes cannot be checked without re-doing the extraction, so the extractor and this
+machine's hostname are recorded and shown beside the text on `/files`. Treat
+extracted text with the same scepticism as client-reported token counts.
+
+### Every request needs a User-Agent
+
+Cloudflare rejects Python's default `Python-urllib/3.x` agent with `403` (error
+1010, browser-integrity check). All three hooks set `brown-bear-client/1.0` for
+that reason. Because the hooks **fail open and silent**, omitting it does not
+produce an error — it produces a gateway that appears to work and never returns
+anything. If you write your own client, set a User-Agent.

@@ -243,3 +243,116 @@
   font-size: 11px;
 }
 
+/* --- file browser (spec 007) -------------------------------------------- */
+
+.bb-file-layout {
+  display: grid;
+  gap: var(--bb-space-4);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 1100px) {
+  .bb-file-layout {
+    /* List narrow and fixed; the detail pane holds prose and a preview, so it
+       takes the flexible column. */
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+
+.bb-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--bb-space-2);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.bb-file-row {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  padding: var(--bb-space-3);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bb-file-row[data-active="true"] {
+  background: var(--bb-surface-container);
+  border-color: var(--bb-primary);
+}
+
+.bb-file-name {
+  overflow-wrap: anywhere;
+}
+
+.bb-file-meta {
+  color: var(--bb-on-surface-variant);
+}
+
+.bb-file-detail {
+  display: grid;
+  gap: var(--bb-space-4);
+  align-content: start;
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  padding: var(--bb-space-4);
+}
+
+/* Previews sit on a fixed neutral surface rather than a themed one: a screenshot
+   with a white background on a white panel has no visible edge. */
+.bb-file-preview-img,
+.bb-file-preview-frame,
+.bb-file-preview-placard {
+  width: 100%;
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: #f4f4f2;
+}
+
+.bb-file-preview-img {
+  max-height: 420px;
+  object-fit: contain;
+  display: block;
+}
+
+.bb-file-preview-frame {
+  height: 480px;
+  border: 1px solid var(--bb-outline-variant);
+}
+
+.bb-file-preview-placard {
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  padding: var(--bb-space-6);
+  background: var(--bb-surface-container-low);
+  color: var(--bb-on-surface-variant);
+  text-align: center;
+}
+
+/* The extracted text is the point of the page, so it gets room and keeps its own
+   line breaks — a re-flowed extraction hides exactly the layout problems that
+   make retrieval bad. */
+.bb-file-extraction {
+  margin: 4px 0 0;
+  padding: var(--bb-space-3);
+  max-height: 380px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--bb-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 20px;
+  border-left: 3px solid var(--bb-primary);
+  background: var(--bb-surface-container-low);
+  border-radius: 0 var(--bb-radius-sm, 6px) var(--bb-radius-sm, 6px) 0;
+}
+

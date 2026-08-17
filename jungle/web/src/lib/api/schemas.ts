@@ -327,3 +327,42 @@ export type Graph = z.infer<typeof GraphSchema>;
 export type LogRow = z.infer<typeof LogRowSchema>;
 export type RecentLogs = z.infer<typeof RecentLogsSchema>;
 
+/* --- files (spec 007) ----------------------------------------------------- */
+
+export const FileSchema = z.object({
+  file_id: z.string(),
+  sha256: z.string(),
+  filename: z.string(),
+  media_type: z.string(),
+  size_bytes: z.number(),
+  project: z.string(),
+  source: z.string(),
+  extractor: z.string().nullable(),
+  extracted_by: z.string().nullable(),
+  has_preview: z.boolean(),
+  status: z.string(),
+  error: z.string().nullable(),
+  chunk_count: z.number(),
+  tags: z.array(z.string()),
+  created_at: z.string().nullable(),
+  indexed_at: z.string().nullable(),
+  extracted_chars: z.number(),
+  /** Whether a browser may render this type inline. SVG is deliberately false. */
+  inline_renderable: z.boolean(),
+  blob_present: z.boolean().optional(),
+  /** Only on the detail endpoint — the list omits it, since a corpus of
+   * extractions would be megabytes of response nobody reads. */
+  extracted_text: z.string().nullable().optional(),
+});
+
+export const FileListSchema = z.object({
+  files: z.array(FileSchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  store_bytes: z.number(),
+});
+
+export type FileRecord = z.infer<typeof FileSchema>;
+export type FileList = z.infer<typeof FileListSchema>;
+

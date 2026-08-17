@@ -119,10 +119,47 @@ server {
     location /ext/ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
+        # Spec 007 uploads. Must stay ABOVE the app's BB_MAX_UPLOAD_BYTES (50 MB)
+        # or nginx rejects an oversized body with its own 413 before the app can
+        # apply — and report — its own limit. The server-wide 32m still guards
+        # every other route.
+        client_max_body_size 52m;
         proxy_pass http://app:8080/ext/;
         include /etc/nginx/proxy_common.conf;
         # Embedding a large document runs a model.
         include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    # ---- authenticated: file preview (spec 007) ---------------------------
+    # The one route that serves uploaded bytes back to a browser INLINE rather
+    # than as a download, so it is the one route that needs its own headers.
+    #
+    # The server block sets `X-Frame-Options DENY`, which refuses framing even
+    # from the same origin — that would block the sandboxed <iframe> the PDF
+    # preview renders in. nginx `add_header` cannot be relaxed per-response, and
+    # a DENY from here plus a SAMEORIGIN from the app would leave the browser
+    # with two conflicting values and resolve to the stricter one. So this
+    # location declares its own.
+    #
+    # CAUTION: `add_header` in a location REPLACES every inherited add_header
+    # rather than merging with them. `nosniff` and `Referrer-Policy` are repeated
+    # below for that reason — dropping them here would strip nosniff from exactly
+    # the route that serves attacker-supplied bytes.
+    #
+    # Ahead of `location /ext/` because nginx evaluates regex locations before
+    # prefix ones, so this wins for a preview URL and nothing else changes.
+    location ~ ^/ext/files/[^/]+/preview$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Frame-Options SAMEORIGIN always;
+
+        proxy_pass http://app:8080$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        include /etc/nginx/proxy_timeouts.conf;
     }
 
     # ---- authenticated: dashboard pages (BB-104) --------------------------
@@ -141,7 +178,7 @@ server {
     # Dashboard pages served by Next.js. `graph` and `logs` are BB-301; both are
     # pages, not API routes — the data they render comes from /api/graph and
     # /api/logs, which are published separately above.
-    location ~ ^/(tokens|cache|collections|settings|graph|logs)$ {
+    location ~ ^/(tokens|cache|collections|settings|graph|logs|files)$ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }

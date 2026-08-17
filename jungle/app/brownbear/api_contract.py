@@ -62,6 +62,38 @@ CONTRACT: tuple[Endpoint, ...] = (
         "Gateway readiness: embedding model, collections and their distance spaces, "
         "cache threshold, top-k and TTL.",
     ),
+    # --- files (spec 007) -----------------------------------------------------
+    Endpoint(
+        "POST", "/ext/files", Reach.AUTHENTICATED, "Context gateway",
+        "Store a file together with the text a client extracted from it. Multipart: "
+        "`file`, plus `extraction`, `extractor`, `project`, `source`, `sha256` and an "
+        "optional `preview` image. Extraction happens on the client; the bytes are "
+        "verified against `sha256`, the text is recorded but cannot be.",
+    ),
+    Endpoint(
+        "GET", "/ext/files", Reach.AUTHENTICATED, "Context gateway",
+        "List stored files with status, extractor and chunk counts.",
+    ),
+    Endpoint(
+        "GET", "/ext/files/{digest}/exists", Reach.AUTHENTICATED, "Context gateway",
+        "Dedup precheck by sha256 — lets a client skip uploading content another "
+        "machine already sent.",
+    ),
+    Endpoint(
+        "GET", "/ext/files/{file_id}", Reach.AUTHENTICATED, "Context gateway",
+        "File metadata and the full extracted text. `?download=1` returns the "
+        "original bytes as an attachment.",
+    ),
+    Endpoint(
+        "GET", "/ext/files/{file_id}/preview", Reach.AUTHENTICATED, "Context gateway",
+        "Inline-renderable bytes: the client's thumbnail, or the original when it is "
+        "an image or a PDF. The only route served inline rather than as a download.",
+    ),
+    Endpoint(
+        "DELETE", "/ext/files/{file_id}", Reach.AUTHENTICATED, "Context gateway",
+        "Remove the row, the blob and the file's chunks together. Leaving the chunks "
+        "would keep retrieval serving a file that no longer exists.",
+    ),
     # --- health --------------------------------------------------------------
     Endpoint(
         "GET", "/api/health/live", Reach.PUBLIC, "Health",

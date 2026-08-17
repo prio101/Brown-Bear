@@ -247,6 +247,19 @@ LAYERS: tuple[Layer, ...] = (
             "retrievable from either side.",
             "Ingestion is idempotent by content id, so re-sending an unchanged "
             "document replaces its chunks rather than duplicating them.",
+            "Files (spec 007) land here and nowhere else. A file is stored by the "
+            "SHA-256 of its bytes, so the same document from three machines is one "
+            "entry and one embedding pass. Its chunks carry file_id, so a retrieved "
+            "passage can be traced back to the original.",
+            "EXTRACTION HAPPENS ON THE CLIENT. Brown Bear runs no OCR, no PDF parser "
+            "and no vision model: it stores the bytes and the text it is handed. The "
+            "bytes are verified against the client's SHA-256; the text cannot be "
+            "verified without doing the extraction here, so the extractor and the "
+            "reporting machine are recorded instead. Treat extracted text with the "
+            "same scepticism as client-reported token counts.",
+            "Images are found by the words extracted from them, never by appearance. "
+            "nomic-embed-text embeds text only, so a picture with no legible text and "
+            "no caption is stored, downloadable and invisible to retrieval.",
         ),
     ),
 )

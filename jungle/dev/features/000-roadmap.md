@@ -34,6 +34,8 @@ historical token charts; `/metrics` scrapes clean.
 | **005 §5.1–5.6** | PDF ingest, queryable near-misses, dirty-window re-aggregation, in-app per-key auth, §5.7 dashboard |
 | **Sprint 1 (BB-101–110)** — Next.js dashboard, design system, public design book | Browser verification of every page (nobody has opened one) |
 | **006** — API doc at `/api-doc/v1`, edge contract documented with a drift check | Decide whether to disable FastAPI's CDN-dependent `/docs` and `/redoc` |
+| **BB-301** — memory graph at `/graph`, streamed logs at `/logs` | — |
+| — | **007** — file ingest with client-side extraction. Picks up the "PDF ingest" gap listed above and widens it: today `/ext/documents` takes a JSON string only, so nothing on disk is reachable by retrieval |
 
 **Phase 4 started early (2026-07-31).** The context gateway is live and reachable through the
 tunnel: embeddings work, both collections exist in cosine space, and `/ext/documents`,
@@ -129,6 +131,12 @@ Two more choices worth locking now: **APScheduler** as the single scheduler (fou
    │ Maintenance    │  │ External Gateway  │
    │ (spec 004)     │  │ (spec 002)        │
    └────────────────┘  └───────────────────┘
+               │            │
+               │       ┌────┴──────────────┐
+               │       │ Phase 6           │  007: files and images into
+               │       │ Multimodal corpus │  the RAG layer
+               │       │ (spec 007)        │
+               │       └────┬──────────────┘
                │            │
         ┌──────┴────────────┴──────┐
         │  Phase 5 — Hardening     │  alerting, retention, security
@@ -243,6 +251,36 @@ Ordered deliberately: **read-only detection ships before anything can delete.**
 | G9 | §2.7 | Key rotation, IP allowlist, HMAC signing, audit viewer | M |
 
 **Milestone 4:** an external machine pushes a document through the tunnel URL, queries it back semantically, and every call appears in the audit log with its key attributed and rate limit enforced.
+
+---
+
+## Phase 6 — Multimodal corpus (spec 007)
+
+**Depends on Phase 4.** Reuses `gateway.ingest()` and the `knowledge` collection
+wholesale; adds bytes, extraction and a background worker around them.
+
+| Task | Spec | Description | Size |
+|---|---|---|---|
+| K1 | §7.1 | Content-addressed blob store on a volume, streaming sha256, size cap enforced mid-stream | M |
+| K2 | §7.2 | `files` table + migration: sha256, media type, scope, extracted text, extractor, status | S |
+| K3 | §7.3 | `/ext/files` — `exists` precheck, multipart upload, list, fetch, preview, delete | M |
+| K4 | §7.4 | Ingest path: verify digest → blob → `gateway.ingest()` → stamp `file_id` into chunks | M |
+| K5 | §7.5 | Organisation: cross-machine dedup, near-duplicate detection, orphan and staleness flags, tags | M |
+| K6 | §7.6 | `/files` dashboard: list, preview pane, extracted-text pane, chunk list | M |
+| K7 | §7.7 | `file` node kind in the memory graph, preview and extractor in the detail panel | M |
+| K8 | §7.8 | `bb_file.py` client hook — hash, precheck, extract via `BB_EXTRACT_CMD`, upload | S |
+
+**Milestone 6:** a PDF and a screenshot, extracted on a client machine and uploaded
+with their text, are retrievable through `/ext/context`, appear as `file` nodes with
+their chunks in the graph, can be previewed and read on `/files`, and a second
+upload of either is deduplicated without re-embedding.
+
+**Extraction is the client's job.** Brown Bear stores the bytes and the text it is
+given; it runs no OCR, no PDF parser and no vision model, and adds no dependency for
+any of them. That is what makes this 8 points rather than 13 — and it sidesteps this
+host's 2 GB MX450, which is not wired to Ollama and could not run a useful vision
+model anyway. The trade is that extraction quality is trusted, not verified, so it
+is recorded and attributed instead (spec 007 §Requirements).
 
 ---
 

@@ -15,6 +15,8 @@ import {
   CacheSchema,
   CollectionsSchema,
   ExtHealthSchema,
+  FileListSchema,
+  FileSchema,
   GraphSchema,
   HealthSchema,
   InfoSchema,
@@ -29,6 +31,8 @@ import {
   type Cache,
   type Collections,
   type ExtHealth,
+  type FileList,
+  type FileRecord,
   type Graph,
   type Health,
   type Info,
@@ -86,4 +90,16 @@ export const getGraph = (): Promise<ApiResult<Graph>> =>
 
 export const getRecentLogs = (limit?: number): Promise<ApiResult<RecentLogs>> =>
   get("/api/logs/recent", RecentLogsSchema, { params: { limit } });
+
+/** Ingested files (spec 007). The list deliberately omits extracted text — a
+ * corpus of extractions would be megabytes nobody reads on a list view. */
+export const getFiles = (
+  params: { project?: string; status?: string; limit?: number } = {},
+): Promise<ApiResult<FileList>> =>
+  get("/ext/files", FileListSchema, { params, timeoutMs: GATEWAY_TIMEOUT_MS });
+
+export const getFile = (fileId: string): Promise<ApiResult<FileRecord>> =>
+  get(`/ext/files/${encodeURIComponent(fileId)}`, FileSchema, {
+    timeoutMs: GATEWAY_TIMEOUT_MS,
+  });
 

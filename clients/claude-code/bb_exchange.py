@@ -26,6 +26,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Cloudflare rejects the default Python-urllib User-Agent with 403 (error 1010,
+# browser-integrity check), and these hooks fail open and silent — so without this
+# every lookup on a remote machine returns nothing and never says why. Any
+# identifiable agent string is accepted; this one names the client.
+USER_AGENT = "brown-bear-client/1.0"
+
 TIMEOUT_DEFAULT = 10.0
 MIN_CHARS_DEFAULT = 200
 
@@ -221,6 +227,7 @@ def main() -> int:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
+            "User-Agent": USER_AGENT,
         },
         method="POST",
     )

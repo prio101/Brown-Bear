@@ -135,6 +135,7 @@ def post(url: str, token: str, body: dict, timeout: float) -> dict | None:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
+            "User-Agent": "brown-bear-client/1.0",
         },
         method="POST",
     )
@@ -482,6 +483,7 @@ def main() -> int:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
+            "User-Agent": "brown-bear-client/1.0",
         },
         method="POST",
     )

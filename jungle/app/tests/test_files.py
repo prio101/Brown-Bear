@@ -227,3 +227,29 @@ class TestExists:
         body = client.get(f"/ext/files/{'a' * 64}/exists").json()
         assert body["exists"] is False
         assert body["file_id"] is None
+
+
+class TestDeletePersists:
+    """A faked database reported this route as working while it was not."""
+
+    def test_delete_actually_deletes(self, sqlite_db):
+        """`session.delete()` followed by `session.expunge()` discards the pending
+        delete, so this route removed the blob and the chunks, reported success,
+        and left a row that would read as `missing` for ever."""
+        record = files_service._upsert_sync(
+            {
+                "id": "f_" + "a" * 32,
+                "sha256": "a" * 64,
+                "filename": "notes.md",
+                "media_type": "text/markdown",
+                "size_bytes": 3,
+                "project": "brownbear",
+                "source": "notes.md",
+                "extracted_text": "abc",
+                "status": FileStatus.stored,
+            }
+        )
+
+        assert files_service._get_sync(record.id) is not None
+        assert files_service._delete_sync(record.id) is not None
+        assert files_service._get_sync(record.id) is None

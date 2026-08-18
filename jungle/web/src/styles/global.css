@@ -12,6 +12,7 @@
 @import "./nav.css";
 @import "./charts.css";
 @import "./graph.css";
+@import "./agents.css";
 
 *,
 *::before,

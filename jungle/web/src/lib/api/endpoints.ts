@@ -11,6 +11,9 @@ import "server-only";
 
 import { get, type ApiResult, type GetOptions } from "./client";
 import {
+  AgentConfigListSchema,
+  AgentConfigSchema,
+  AgentInventorySchema,
   AggregationSchema,
   CacheSchema,
   CollectionsSchema,
@@ -28,6 +31,9 @@ import {
   TokenSummarySchema,
   TokensByModelSchema,
   TokensBySourceSchema,
+  type AgentConfig,
+  type AgentConfigList,
+  type AgentInventory,
   type Aggregation,
   type Cache,
   type Collections,
@@ -102,6 +108,23 @@ export const getFiles = (
 
 export const getFile = (fileId: string): Promise<ApiResult<FileRecord>> =>
   get(`/ext/files/${encodeURIComponent(fileId)}`, FileSchema, {
+    timeoutMs: GATEWAY_TIMEOUT_MS,
+  });
+
+/** Agent configuration (spec 008). The inventory is grouped in the database, so
+ * this response stays the same size whether a machine has ten files or a thousand. */
+export const getAgentInventory = (): Promise<ApiResult<AgentInventory>> =>
+  get("/ext/agents", AgentInventorySchema, { timeoutMs: GATEWAY_TIMEOUT_MS });
+
+/** One branch's files. Deliberately without their content: a machine's whole
+ * configuration would be megabytes of payload for a list nobody reads in full. */
+export const getAgentConfigs = (
+  params: { machine?: string; scope?: string; project?: string; tool?: string; limit?: number } = {},
+): Promise<ApiResult<AgentConfigList>> =>
+  get("/ext/agents/files", AgentConfigListSchema, { params, timeoutMs: GATEWAY_TIMEOUT_MS });
+
+export const getAgentConfig = (configId: string): Promise<ApiResult<AgentConfig>> =>
+  get(`/ext/agents/files/${encodeURIComponent(configId)}`, AgentConfigSchema, {
     timeoutMs: GATEWAY_TIMEOUT_MS,
   });
 

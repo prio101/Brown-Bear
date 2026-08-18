@@ -94,6 +94,43 @@ CONTRACT: tuple[Endpoint, ...] = (
         "Remove the row, the blob and the file's chunks together. Leaving the chunks "
         "would keep retrieval serving a file that no longer exists.",
     ),
+    # --- agent configuration (spec 008) --------------------------------------
+    Endpoint(
+        "POST", "/ext/agents/sync", Reach.AUTHENTICATED, "Agent configuration",
+        "Sync one machine's tool configuration from a JSON snapshot: "
+        "`{machine, scope, project, tool, prune, files:[{path, content}]}`. Values "
+        "that look like credentials are masked here before the row is written, and "
+        "the count is reported — the client's own redaction is not trusted. The "
+        "count is of masks in the stored text, so it includes any the client "
+        "applied first.",
+    ),
+    Endpoint(
+        "POST", "/ext/agents/sync/archive", Reach.AUTHENTICATED, "Agent configuration",
+        "The same sync as a multipart zip of the tool directory. Entry names are "
+        "validated like any other path, and the archive is refused unexpanded if its "
+        "declared expansion is implausible.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents", Reach.AUTHENTICATED, "Agent configuration",
+        "The inventory: machine → Global/project → tool, with file counts, bytes, "
+        "redaction counts and sync ages. Aggregated in the database, so the response "
+        "does not grow with the corpus.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents/files", Reach.AUTHENTICATED, "Agent configuration",
+        "One branch's files without their content. Filter by `machine`, `scope`, "
+        "`project`, `tool` and `status`.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents/files/{config_id}", Reach.AUTHENTICATED, "Agent configuration",
+        "One file with its stored content. Stored means redacted: the pre-redaction "
+        "text is never written down, so no endpoint can return it.",
+    ),
+    Endpoint(
+        "DELETE", "/ext/agents/files/{config_id}", Reach.AUTHENTICATED, "Agent configuration",
+        "Purge a row. The explicit counterpart to `prune`, which only marks a file "
+        "as removed and keeps its last content.",
+    ),
     # --- health --------------------------------------------------------------
     Endpoint(
         "GET", "/api/health/live", Reach.PUBLIC, "Health",
@@ -252,6 +289,7 @@ CONTRACT: tuple[Endpoint, ...] = (
 #: Group presentation order.
 GROUPS: tuple[str, ...] = (
     "Context gateway",
+    "Agent configuration",
     "Memory graph",
     "Tokens",
     "Monitoring",

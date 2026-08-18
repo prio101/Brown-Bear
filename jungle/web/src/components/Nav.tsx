@@ -17,6 +17,7 @@ const DESTINATIONS = [
   { href: "/graph", label: "Graph", glyph: "◈" },
   { href: "/logs", label: "Logs", glyph: "≡" },
   { href: "/files", label: "Files", glyph: "▣" },
+  { href: "/agents", label: "Agents", glyph: "◧" },
   { href: "/tokens", label: "Tokens", glyph: "∑" },
   { href: "/cache", label: "Cache", glyph: "⟳" },
   { href: "/collections", label: "Collections", glyph: "▤" },

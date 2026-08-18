@@ -90,6 +90,29 @@ class Settings(BaseSettings):
     # preview that is not much smaller than the original is not a preview.
     max_preview_bytes: int = 2 * 1024 * 1024
 
+    # --- agent configuration sync (spec 008) ---
+    # These are small text files a reader wants to read, so they live in Postgres
+    # rather than in the blob store: dedup and streaming buy nothing here, and a
+    # `text` column is what makes them listable and comparable.
+    #
+    # 256 KB is well above any real settings file or skill document. A file over
+    # the cap is recorded with its size and digest and no content — never
+    # truncated, because a configuration file cut in half is a configuration that
+    # exists on no machine.
+    max_config_file_bytes: int = 256 * 1024
+    # A whole `.claude` directory in one request. The edge caps the body at 52 MB;
+    # this is the app's own, smaller limit, stated in the rejection so a client is
+    # never silently truncated.
+    max_sync_bytes: int = 8 * 1024 * 1024
+    max_sync_files: int = 500
+    # Uncompressed ceiling for a zip. Higher than max_sync_bytes because the
+    # archive arrives compressed and text compresses well.
+    max_sync_unpacked_bytes: int = 32 * 1024 * 1024
+    # After this, a machine's configuration is shown as stale rather than as
+    # current. A sync is a deliberate client action, so silence is expected — and
+    # silence must never be rendered as an up-to-date configuration.
+    config_stale_hours: int = 24
+
     # Two collections, never one: a cache hit must be a prior *answer*, and a
     # mixed collection lets a document paragraph clear the threshold and get
     # served as though it were one (spec 005).

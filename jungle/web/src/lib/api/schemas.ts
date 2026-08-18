@@ -366,6 +366,101 @@ export const FileListSchema = z.object({
 export type FileRecord = z.infer<typeof FileSchema>;
 export type FileList = z.infer<typeof FileListSchema>;
 
+/* --- agent configuration (spec 008) --------------------------------------- */
+
+/** One tool's configuration on one machine, in one scope. */
+export const AgentToolSchema = z.object({
+  tool: z.string(),
+  files: z.number(),
+  bytes: z.number(),
+  /** Files that vanished from the machine and were kept, flagged. Not an error. */
+  removed: z.number(),
+  /** Values the server masked before writing. Shown, because it is the reader's
+   * evidence that redaction happened here rather than being left to a client. */
+  redactions: z.number(),
+  /** Null only if a branch somehow has no rows — a machine that has never synced
+   * simply does not appear. */
+  last_synced_at: z.string().nullable(),
+  changed_at: z.string().nullable(),
+});
+
+export const AgentScopeSchema = z.object({
+  /** "global" or "project" — the second level of the address. */
+  scope: z.string(),
+  project: z.string(),
+  /** "Global", or the project's normalised name. */
+  label: z.string(),
+  tools: z.array(AgentToolSchema),
+  files: z.number(),
+  bytes: z.number(),
+});
+
+export const AgentMachineSchema = z.object({
+  machine: z.string(),
+  scopes: z.array(AgentScopeSchema),
+  files: z.number(),
+  bytes: z.number(),
+  removed: z.number(),
+  redactions: z.number(),
+  last_synced_at: z.string().nullable(),
+});
+
+export const AgentInventorySchema = z.object({
+  machines: z.array(AgentMachineSchema),
+  totals: z.object({
+    machines: z.number(),
+    files: z.number(),
+    bytes: z.number(),
+    removed: z.number(),
+    redactions: z.number(),
+  }),
+  tools: z.array(z.string()),
+  /** How long since a sync before the page calls a machine stale. The threshold
+   * comes from the backend so the page and the app cannot disagree about it. */
+  stale_after_hours: z.number(),
+});
+
+export const AgentConfigSchema = z.object({
+  config_id: z.string(),
+  machine: z.string(),
+  scope: z.string(),
+  project: z.string(),
+  label: z.string(),
+  tool: z.string(),
+  path: z.string(),
+  /** Digest of the content as the machine had it — before redaction. */
+  sha256: z.string(),
+  size_bytes: z.number(),
+  /** "text", "binary" or "too_large". The last two have no content by design:
+   * a configuration file truncated at the cap exists on no machine. */
+  content_kind: z.string(),
+  redactions: z.number(),
+  status: z.string(),
+  /** Counts distinct contents, not syncs. */
+  revision: z.number(),
+  first_seen_at: z.string().nullable(),
+  last_synced_at: z.string().nullable(),
+  changed_at: z.string().nullable(),
+  removed_at: z.string().nullable(),
+  /** Only on the detail endpoint, and always the redacted text — the original is
+   * never written down, so nothing can return it. */
+  content: z.string().nullable().optional(),
+});
+
+export const AgentConfigListSchema = z.object({
+  files: z.array(AgentConfigSchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+
+export type AgentTool = z.infer<typeof AgentToolSchema>;
+export type AgentScope = z.infer<typeof AgentScopeSchema>;
+export type AgentMachine = z.infer<typeof AgentMachineSchema>;
+export type AgentInventory = z.infer<typeof AgentInventorySchema>;
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type AgentConfigList = z.infer<typeof AgentConfigListSchema>;
+
 /* --- memory savings (spec 003 §3.5 rev 2) --------------------------------- */
 
 export const SavingsSchema = z.object({

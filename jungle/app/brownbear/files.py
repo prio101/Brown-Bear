@@ -210,6 +210,12 @@ def _delete_sync(identifier: str) -> FileRecord | None:
         if record is None:
             return None
         session.delete(record)
+        # Flush BEFORE expunging. `expunge` evicts the instance from the session
+        # and discards the pending delete with it, so expunging first left this
+        # route removing the blob and the chunks, reporting success, and keeping
+        # the row — a file that then reads as `missing` for ever. Flushing emits
+        # the DELETE first, so the expunge only detaches.
+        session.flush()
         session.expunge(record)
         return record
 

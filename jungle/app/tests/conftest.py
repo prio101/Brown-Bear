@@ -54,3 +54,30 @@ def recorded(monkeypatch) -> list[dict]:
 
     monkeypatch.setattr("brownbear.routers.ollama_proxy.record_token_event", _record)
     return events
+
+
+@pytest.fixture
+def sqlite_db(tmp_path, monkeypatch):
+    """Point the app's engine at a throwaway SQLite file.
+
+    Almost everything here fakes the database, which is right: the suite must run
+    without the compose stack. But a fake cannot catch a bug in the SQL or in the
+    session bookkeeping — `session.delete()` followed by `session.expunge()`
+    silently cancels the delete, and every faked test in the world reports that
+    route as working. SQLite ships with Python, so a real round trip costs nothing
+    in portability.
+
+    Not a substitute for PostgreSQL: native enums and the migrations are
+    PostgreSQL-only. It exercises the session, not the schema.
+    """
+    from brownbear import models  # noqa: F401  — registers every table
+    from brownbear.config import get_settings
+    from brownbear.db import Base, get_engine, reset_engine
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "database_url", f"sqlite+pysqlite:///{tmp_path / 'test.sqlite'}")
+    reset_engine()
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    yield engine
+    reset_engine()

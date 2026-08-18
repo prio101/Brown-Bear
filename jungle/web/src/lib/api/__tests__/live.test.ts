@@ -14,6 +14,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getAgentConfig,
+  getAgentConfigs,
+  getAgentInventory,
   getAggregation,
   getCache,
   getCollections,
@@ -44,6 +47,8 @@ live("live API conforms to its schemas", () => {
     ["/api/tokens/aggregation", getAggregation],
     ["/api/settings", getSettings],
     ["/ext/health", () => getExtHealth()],
+    ["/ext/agents", getAgentInventory],
+    ["/ext/agents/files", () => getAgentConfigs({ limit: 5 })],
   ] as const;
 
   for (const [name, call] of cases) {
@@ -56,4 +61,18 @@ live("live API conforms to its schemas", () => {
       expect(result.ok).toBe(true);
     });
   }
+
+  // Needs an id, so it cannot join the table above. The detail shape is the one
+  // that carries `content`, which no other response includes.
+  it("/ext/agents/files/{id} validates", async () => {
+    const listing = await getAgentConfigs({ limit: 1 });
+    if (!listing.ok) throw new Error(`listing failed: ${listing.error.detail}`);
+    const first = listing.data.files[0];
+    if (!first) return; // nothing synced on this instance; not a failure
+    const detail = await getAgentConfig(first.config_id);
+    if (!detail.ok) {
+      throw new Error(`detail failed: [${detail.error.kind}] ${detail.error.detail}`);
+    }
+    expect(detail.data.config_id).toBe(first.config_id);
+  });
 });

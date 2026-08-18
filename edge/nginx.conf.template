@@ -177,8 +177,9 @@ server {
 
     # Dashboard pages served by Next.js. `graph` and `logs` are BB-301; both are
     # pages, not API routes — the data they render comes from /api/graph and
-    # /api/logs, which are published separately above.
-    location ~ ^/(tokens|cache|collections|settings|graph|logs|files)$ {
+    # /api/logs, which are published separately above. `agents` is spec 008, and
+    # reads /ext/agents, which the /ext/ location above already publishes.
+    location ~ ^/(tokens|cache|collections|settings|graph|logs|files|agents)$ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }

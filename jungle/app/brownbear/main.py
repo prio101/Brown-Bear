@@ -6,6 +6,7 @@ Routers are mounted here as each spec lands:
   /api/tokens   — spec 003 read endpoints
   /api/maintenance — spec 004
   /ext          — spec 005 context gateway (semantic cache + retrieval)
+  /ext/agents   — spec 008 agent configuration sync
 """
 
 from contextlib import asynccontextmanager
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     )
 
     from brownbear.routers import (
+        agents,
         api_doc,
         design,
         export,
@@ -70,6 +72,10 @@ def create_app() -> FastAPI:
     # Spec 007. Under /ext/, so the edge publishes it with the same shared secret
     # as the rest of the gateway and needs no new nginx location.
     app.include_router(files.router)
+    # Spec 008. Under /ext/ for the same reason files are: the edge already
+    # authenticates everything there with the shared secret, so a machine's
+    # configuration is never reachable without it.
+    app.include_router(agents.router)
     # Public, unauthenticated at the edge (BB-109).
     app.include_router(design.router)
     # Authenticated at the edge (spec 006): an endpoint inventory describes the

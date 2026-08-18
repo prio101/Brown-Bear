@@ -7,6 +7,10 @@ Two hooks that put Brown Bear in front of Claude on any machine:
 | `bb_context.py` | `UserPromptSubmit` | Before each prompt: POSTs it to `/ext/context`, injects a cached answer or retrieved chunks |
 | `bb_exchange.py` | `Stop` | After each turn: POSTs prompt + answer + token usage to `/ext/exchange` |
 
+Two commands you run yourself, rather than hooks: `bb_file.py` sends a file with
+the text this machine extracted from it, and `bb_sync.py` sends this machine's
+`.claude` / `.qwen` configuration. Both are documented at the end of this file.
+
 Both **fail open and silent.** If the gateway is unreachable, unauthenticated,
 slow, or returns junk, they exit 0 with no output and Claude proceeds normally.
 Brown Bear being down degrades context; it never blocks your work.
@@ -232,10 +236,83 @@ bytes cannot be checked without re-doing the extraction, so the extractor and th
 machine's hostname are recorded and shown beside the text on `/files`. Treat
 extracted text with the same scepticism as client-reported token counts.
 
+## Syncing configuration — `bb_sync.py` (spec 008)
+
+Sends this machine's agent configuration to Brown Bear so `/agents` can show what
+each machine is actually running, addressed as **machine → Global or project →
+tool → file**.
+
+```bash
+python3 bb_sync.py                    # this checkout's .claude, under the repo name
+python3 bb_sync.py --global           # ~/.claude, under the "Global" scope
+python3 bb_sync.py --tool qwen --global
+python3 bb_sync.py --zip              # one archive instead of a JSON body
+python3 bb_sync.py --dry-run          # print what would be sent, send nothing
+```
+
+Nothing is automatic. A sync happens when you ask for one, which is why `/agents`
+shows the age of every file's last sync rather than implying it is current.
+
+**Run `--dry-run` the first time.** It prints exactly which files would leave the
+machine, and a grouped count of what would not:
+
+```
+/Users/you/.claude → your-laptop/global/claude
+  would send 7 file(s), 2 value(s) masked here
+    + settings.json
+    + settings.local.json
+    + hooks/brownbear-context.py
+    ...
+    - 472 file(s) skipped: plugins/ is runtime state, not configuration
+    - 125 file(s) skipped: file-history/ is runtime state, not configuration
+    - 60 file(s) skipped: projects/ is runtime state, not configuration
+```
+
+### What is sent, and what is not
+
+Selection is an **allowlist**, not a denylist, and that is load-bearing. A
+`~/.claude` accumulates runtime state beside its settings — `projects/` is every
+conversation transcript this machine has ever had, `plugins/repos/` is git clones,
+`file-history/` is edit snapshots. On the machine this was written on that is 631
+files, of which 7 are configuration. A denylist would need updating every time the
+tool grows a new cache directory, and the failure mode is silent: megabytes of
+transcripts uploaded as "settings".
+
+| Sent | Not sent |
+|---|---|
+| `settings.json`, `settings.local.json`, `CLAUDE.md`, `.mcp.json`, `statusline-command.sh`, and the rest of the named set | anything else at the top level |
+| everything under `agents/`, `commands/`, `skills/`, `hooks/`, `output-styles/`, `rules/` | `projects/`, `history/`, `file-history/`, `plugins/repos/`, `todos/`, `shell-snapshots/`, caches |
+| `plugins/config.json` | `.credentials.json`, `.env*`, `*.pem`, `*.key` — never, at either end |
+
+`--all` walks the whole directory instead. On a global `~/.claude` that includes
+conversation transcripts; be deliberate.
+
+### Secrets are masked twice, and only the second time counts
+
+This script masks credential-shaped values before sending — an `env` block, a
+`"...token": "..."` pair, an `sk-ant-…` literal, a PEM private key. The server masks
+again before writing the row, and **that** pass is the guarantee: an older copy of
+this script, or a hand-rolled `curl`, would skip the client half entirely. The count
+in the output is the server's, and `/agents` shows it beside each file.
+
+Files whose only content is a credential are refused at both ends rather than
+masked — masking one leaves nothing to read.
+
+| Variable | Meaning |
+|---|---|
+| `BB_MACHINE` | what this machine calls itself (default: hostname) |
+| `BB_PROJECT` | project scope (default: the git repo name) |
+| `BB_SYNC_TIMEOUT` | seconds for the upload (default 120) |
+
+**`--no-prune` when you are pushing part of a directory.** By default a sync says
+"this is the whole branch", and a file that is no longer here is marked `removed` —
+kept and shown, never deleted. That is wrong for a partial push, so pass
+`--no-prune` and nothing else in the branch is touched.
+
 ### Every request needs a User-Agent
 
 Cloudflare rejects Python's default `Python-urllib/3.x` agent with `403` (error
-1010, browser-integrity check). All three hooks set `brown-bear-client/1.0` for
+1010, browser-integrity check). All four scripts set `brown-bear-client/1.0` for
 that reason. Because the hooks **fail open and silent**, omitting it does not
 produce an error — it produces a gateway that appears to work and never returns
 anything. If you write your own client, set a User-Agent.

@@ -4,6 +4,11 @@ Importing this package must register every table on ``Base.metadata`` —
 Alembic's autogenerate depends on it. Add each new model module here.
 """
 
+from brownbear.models.agents import (
+    AgentConfig,
+    ConfigContentKind,
+    ConfigStatus,
+)
 from brownbear.models.aggregation import AggregationRun, RunStatus
 from brownbear.models.context import ContextEvent
 from brownbear.models.files import FileRecord, FileStatus
@@ -18,9 +23,12 @@ from brownbear.models.tokens import (
 )
 
 __all__ = [
+    "AgentConfig",
     "AggregationRun",
     "AppSetting",
     "CacheSample",
+    "ConfigContentKind",
+    "ConfigStatus",
     "ContextEvent",
     "FileRecord",
     "FileStatus",

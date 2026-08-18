@@ -1,0 +1,44 @@
+/* --- agent configuration (spec 008) ------------------------------------- */
+/* The address is three fixed levels, so it is three rows of chips rather than an
+   expanding tree: a tree widget for a known depth of three is machinery for
+   nothing, and it hides the level names the requirement is written in.
+
+   The file list and detail pane reuse .bb-file-* from graph.css unchanged —
+   the layout problem is identical, and a second near-copy of it would drift. */
+
+.bb-agents {
+  display: grid;
+  gap: var(--bb-space-4);
+}
+
+.bb-agents-levels {
+  display: grid;
+  gap: var(--bb-space-3);
+  padding: var(--bb-space-3);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: var(--bb-surface-container-low);
+}
+
+.bb-agents-level {
+  display: grid;
+  gap: var(--bb-space-2);
+}
+
+/* Wraps rather than scrolls: a machine list that scrolls horizontally hides
+   machines, and the count of machines is small. */
+.bb-agents-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--bb-space-2);
+}
+
+.bb-agents-chips .bb-graph-chip {
+  /* Two lines inside one chip — the name and its counts — so the chip stays a
+     single hit target at the 48dp floor rather than becoming two controls. */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-height: 48px;
+  text-align: left;
+}

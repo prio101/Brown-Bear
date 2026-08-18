@@ -36,6 +36,7 @@ historical token charts; `/metrics` scrapes clean.
 | **006** — API doc at `/api-doc/v1`, edge contract documented with a drift check | Decide whether to disable FastAPI's CDN-dependent `/docs` and `/redoc` |
 | **BB-301** — memory graph at `/graph`, streamed logs at `/logs` | — |
 | — | **007** — file ingest with client-side extraction. Picks up the "PDF ingest" gap listed above and widens it: today `/ext/documents` takes a JSON string only, so nothing on disk is reachable by retrieval |
+| **008** — agent configuration sync: `/ext/agents`, the `/agents` page, `bb_sync.py`. Closes half of G7 | Nothing has synced through the tunnel yet — the code is not deployed on the live instance. Migration `0007` is verified against PostgreSQL 16, including its downgrade |
 
 **Phase 4 started early (2026-07-31).** The context gateway is live and reachable through the
 tunnel: embeddings work, both collections exist in cosine space, and `/ext/documents`,
@@ -63,6 +64,8 @@ curl localhost:8080/api/health          # all four services
 curl localhost:8080/metrics             # Prometheus exposition format
 docker compose run --rm app alembic upgrade head
 docker build --target dev -t brownbear-dev jungle/app && docker run --rm brownbear-dev
+python3 jungle/app/scripts/check_edge_contract.py   # declared contract vs the edge
+python3 jungle/app/scripts/smoke_agent_sync.py      # spec 008 end to end, on SQLite
 ```
 
 **Phase 2 scoping calls**, each recorded in spec 001 where it applies:
@@ -132,11 +135,11 @@ Two more choices worth locking now: **APScheduler** as the single scheduler (fou
    │ (spec 004)     │  │ (spec 002)        │
    └────────────────┘  └───────────────────┘
                │            │
-               │       ┌────┴──────────────┐
-               │       │ Phase 6           │  007: files and images into
-               │       │ Multimodal corpus │  the RAG layer
-               │       │ (spec 007)        │
-               │       └────┬──────────────┘
+               │       ┌────┴──────────────┬──────────────────┐
+               │       │ Phase 6           │ Phase 7          │  008: what each
+               │       │ Multimodal corpus │ Machine config   │  machine is
+               │       │ (spec 007)        │ (spec 008)       │  running
+               │       └────┬──────────────┴──────────────────┘
                │            │
         ┌──────┴────────────┴──────┐
         │  Phase 5 — Hardening     │  alerting, retention, security
@@ -281,6 +284,42 @@ any of them. That is what makes this 8 points rather than 13 — and it sidestep
 host's 2 GB MX450, which is not wired to Ollama and could not run a useful vision
 model anyway. The trade is that extraction quality is trusted, not verified, so it
 is recorded and attributed instead (spec 007 §Requirements).
+
+---
+
+## Phase 7 — Machine configuration (spec 008)
+
+**Depends on Phase 4** for the `/ext/` prefix and its edge authentication, and on
+nothing else: no collection, no embedding, no model. It is the first feature here
+that stores something which is *not* memory — a machine's own configuration — and
+the boundary is stated in the spec rather than left to be inferred.
+
+| Task | Spec | Description | Size |
+|---|---|---|---|
+| A1 | §8.1 | Address normalisation, path safety, credential redaction — a pure module with its own tests | M |
+| A2 | §8.2 | `agent_configs` table + migration `0007`: the four-column address, content, redaction count, revision | S |
+| A3 | §8.3 | Sync service: upsert with change detection on the received digest, branch-scoped prune, inventory rollup | M |
+| A4 | §8.4 | `/ext/agents` — JSON sync, zip sync, inventory, branch listing, detail, delete | M |
+| A5 | §8.5 | `/agents` page: the three-level chip navigation, file list, content pane, stale-machine banner | M |
+| A6 | §8.6 | `bb_sync.py` client — allowlisted walk, client-side redaction, `--dry-run`, `--zip` | S |
+
+**Milestone 7:** two machines sync their `.claude` directories; `/agents` shows both
+under machine → Global/project → tool → file, a key in `settings.json` is stored
+masked with its count shown, re-syncing an unchanged directory reports every file
+unchanged, and a deleted file appears as `removed` rather than vanishing.
+
+**The security call, recorded here because it constrains the feature.** A `.claude`
+directory routinely contains credentials, and this endpoint is internet-reachable
+behind one shared secret. Redaction therefore happens **server-side, before the
+row is written** — the client redacts too, but an old client or a hand-rolled
+`curl` bypasses that, so it cannot be the guarantee. Files whose only content is a
+credential (`.credentials.json`, `.env`, `*.pem`) are refused rather than masked.
+
+**Selection is an allowlist, and it had to become one.** The first version of the
+client used a denylist and a dry run against this machine's `~/.claude` sent 631
+files — `projects/` transcripts, `plugins/repos/` git clones, `file-history/`
+snapshots. Seven of those files are configuration. A denylist needs updating every
+time the tool grows a cache directory, and it fails silently.
 
 ---
 

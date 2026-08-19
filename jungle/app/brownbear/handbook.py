@@ -26,7 +26,7 @@ from typing import Any
 #: Bumped when the *meaning* of a layer changes — a new store, a different order
 #: of consultation, a changed guarantee. Not bumped for wording. A client that
 #: caches this document keys on it.
-HANDBOOK_VERSION = "1.0"
+HANDBOOK_VERSION = "1.1"
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,12 @@ LAYERS: tuple[Layer, ...] = (
         keyed_by=(
             "exchange_id = x_<sha256(project\\0model\\0prompt)[:32]> for a "
             "conversation; content_id = c_<sha256(project\\0chunk_text)[:32]> for a "
-            "knowledge chunk; request_id (caller-supplied) for token usage."
+            "knowledge chunk; request_id (caller-supplied) for token usage; "
+            "file_id = f_<sha256(bytes)[:32]> for a file, so the same document "
+            "from three machines is one entry; config_id = a_<sha256(address)[:32]> "
+            "for a synced configuration file — keyed by its ADDRESS "
+            "(machine, scope, project, tool, path) rather than by its content, so "
+            "the same settings.json on two machines is two records, deliberately."
         ),
         scope=(
             "The project and model are inside the hash, so the same prompt asked "
@@ -135,6 +140,10 @@ LAYERS: tuple[Layer, ...] = (
             "digest": "sha256, truncated to 32 hex characters",
             "conversation_prefix": "x_",
             "chunk_prefix": "c_",
+            # Two stores adopted this layer's rule after it was written. A reader
+            # meeting an `f_…` or `a_…` id needs to find it here, not by grepping.
+            "file_prefix": "f_",
+            "agent_config_prefix": "a_",
         },
         notes=(
             "This is the layer most often misread as a fast path. It is not one. Its "
@@ -251,6 +260,14 @@ LAYERS: tuple[Layer, ...] = (
             "SHA-256 of its bytes, so the same document from three machines is one "
             "entry and one embedding pass. Its chunks carry file_id, so a retrieved "
             "passage can be traced back to the original.",
+            "Ingestion is in two halves (spec 009): the bytes can arrive on their own — "
+            "a hook sends them the moment a file is read — and the text follows through "
+            "POST /ext/files/{id}/extraction from whoever actually read it, in practice "
+            "the model in the session. A re-extraction REPLACES the file's chunks; two "
+            "readings of one document, both retrievable, is worse than one poor reading. "
+            "Where a document is translated, the English text is what gets indexed and "
+            "the original is stored beside it, so retrieval behaves the same whatever "
+            "language a document started in.",
             "EXTRACTION HAPPENS ON THE CLIENT. Brown Bear runs no OCR, no PDF parser "
             "and no vision model: it stores the bytes and the text it is handed. The "
             "bytes are verified against the client's SHA-256; the text cannot be "
@@ -387,6 +404,15 @@ KNOBS: tuple[Knob, ...] = (
         "cache, since \"Done.\" is noise in a corpus.",
     ),
     Knob(
+        "BB_MEDIA_TYPES / BB_MEDIA_MAX_BYTES / BB_ENABLED",
+        "client hook — environment",
+        "media extensions / 50 MB / on",
+        "Which files the read-time hook offers up, how large one may be, and a kill "
+        "switch for all three hooks. The hook stores a file's BYTES and then asks the "
+        "model to send the text — nothing is extracted automatically, because no rule "
+        "here can tell a scanned contract from a screenshot of a terminal.",
+    ),
+    Knob(
         "cache_similarity_threshold / context_top_k / cache_ttl_days",
         "server — PostgreSQL settings store, host only",
         "0.95 / 5 / 30",
@@ -413,6 +439,17 @@ GUARANTEES: tuple[str, ...] = (
     "the API key never leaves the client, and the client is the only party that sees "
     "the model's response — which is why usage is reported to /ext/exchange rather "
     "than captured.",
+    "Not everything this stack stores is memory. Synced agent configuration "
+    "(spec 008, POST /ext/agents/sync) lives in PostgreSQL and belongs to NO layer "
+    "above: it is never embedded, never chunked, never in either collection, and can "
+    "never come back from /ext/context. A settings.json is not something anyone asked "
+    "a question about, and putting it in `knowledge` would be noise that the "
+    "two-collection split cannot filter, because it would be inside one of them. "
+    "Credential-shaped values in it are masked before the row is written — which is "
+    "also why a stored configuration is only sometimes restorable: the last ten "
+    "contents of each file are kept and can be pulled back on demand (spec 010), but "
+    "a file that had a secret in it comes back marked unrestorable rather than "
+    "handed over with «redacted» where the key was.",
 )
 
 

@@ -42,3 +42,38 @@
   min-height: 48px;
   text-align: left;
 }
+
+/* --- revision history (spec 010) ---------------------------------------- */
+/* A list, not a timeline graphic: ten entries with a date and a size is a table's
+   job, and a decorative timeline would make the current entry harder to find
+   rather than easier. */
+
+.bb-revisions {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--bb-space-2);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.bb-revision {
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  padding: var(--bb-space-2) var(--bb-space-3);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bb-revision[data-active="true"] {
+  background: var(--bb-surface-container);
+  border-color: var(--bb-primary);
+}

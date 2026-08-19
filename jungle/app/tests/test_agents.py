@@ -851,3 +851,199 @@ class TestPersistence:
             ("project", "claude", 1),
         ]
         assert all(g["removed"] == 0 for g in groups)
+
+
+class TestRevisionHistory:
+    """Spec 010. Exercised against a real database — the whole point of the table is
+    what it holds *after* several syncs, which a fake would simply agree with."""
+
+    def test_a_new_file_gets_revision_one(self, sqlite_db):
+        values = agents_service.prepare(BRANCH, "settings.json", b"{}")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+
+        history = agents_service._revisions_sync(values["id"])
+        assert [r.revision for r in history] == [1]
+        # replaced_at is null exactly for the current content.
+        assert history[0].replaced_at is None
+
+    def test_an_unchanged_resync_writes_no_history(self, sqlite_db):
+        """The table grows with edits, not with syncs. A machine syncing every
+        session must not accumulate identical revisions."""
+        values = agents_service.prepare(BRANCH, "settings.json", b"{}")
+        for _ in range(3):
+            agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+
+        assert len(agents_service._revisions_sync(values["id"])) == 1
+
+    def test_each_edit_is_kept_with_its_content(self, sqlite_db):
+        first = agents_service.prepare(BRANCH, "settings.json", b'{"model":"a"}')
+        agents_service._sync_sync(BRANCH, [first], prune=False, now=datetime.now(UTC))
+        second = agents_service.prepare(BRANCH, "settings.json", b'{"model":"b"}')
+        agents_service._sync_sync(BRANCH, [second], prune=False, now=datetime.now(UTC))
+
+        history = agents_service._revisions_sync(first["id"])
+        assert [r.revision for r in history] == [2, 1]
+        assert history[0].content == '{"model":"b"}'
+        # The earlier content is still here — that is the difference between a copy
+        # and a backup.
+        assert history[1].content == '{"model":"a"}'
+
+    def test_only_the_newest_revision_is_current(self, sqlite_db):
+        values = agents_service.prepare(BRANCH, "s.json", b"one")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+        agents_service._sync_sync(
+            BRANCH, [agents_service.prepare(BRANCH, "s.json", b"two")], prune=False,
+            now=datetime.now(UTC),
+        )
+
+        history = agents_service._revisions_sync(values["id"])
+        assert [r.replaced_at is None for r in history] == [True, False]
+
+    def test_a_file_returning_from_removed_adds_no_revision(self, sqlite_db):
+        """`_apply` reports 'updated' for a resurrection, and snapshotting that
+        would fill the history with duplicates of one content."""
+        values = agents_service.prepare(BRANCH, "a.md", b"same")
+        other = agents_service.prepare(BRANCH, "b.md", b"other")
+        agents_service._sync_sync(BRANCH, [values, other], prune=False, now=datetime.now(UTC))
+        agents_service._sync_sync(BRANCH, [other], prune=True, now=datetime.now(UTC))
+        agents_service._sync_sync(BRANCH, [values, other], prune=False, now=datetime.now(UTC))
+
+        assert len(agents_service._revisions_sync(values["id"])) == 1
+
+    def test_history_is_capped(self, sqlite_db, monkeypatch):
+        """Bounded on purpose: after blobs, this is the second thing here that would
+        otherwise grow forever with nothing pruning it."""
+        from brownbear.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "config_revisions_kept", 3, raising=False)
+        identifier = None
+        for n in range(6):
+            values = agents_service.prepare(BRANCH, "s.json", f"content {n}".encode())
+            identifier = values["id"]
+            agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+
+        history = agents_service._revisions_sync(identifier)
+        assert [r.revision for r in history] == [6, 5, 4]
+        assert history[0].content == "content 5"
+
+    def test_deleting_a_file_takes_its_history(self, sqlite_db):
+        values = agents_service.prepare(BRANCH, "s.json", b"one")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+        agents_service._sync_sync(
+            BRANCH, [agents_service.prepare(BRANCH, "s.json", b"two")], prune=False,
+            now=datetime.now(UTC),
+        )
+
+        agents_service._delete_sync(values["id"])
+        assert agents_service._revisions_sync(values["id"]) == []
+
+
+class TestRestorability:
+    """The refusal is data, not a rule each client is trusted to reimplement."""
+
+    def test_clean_text_can_be_written_back(self):
+        assert agents_service.restorability(ConfigContentKind.text, 0)["restorable"] is True
+
+    def test_a_masked_file_cannot(self):
+        verdict = agents_service.restorability(ConfigContentKind.text, 2)
+        assert verdict["restorable"] is False
+        assert "looks right and does not work" in verdict["reason"]
+
+    def test_content_that_was_never_stored_cannot(self):
+        for kind in (ConfigContentKind.binary, ConfigContentKind.too_large):
+            assert agents_service.restorability(kind, 0)["restorable"] is False
+
+
+class TestPullApi:
+    def test_returns_content_and_marks_what_cannot_be_restored(self, client, monkeypatch):
+        rows = [
+            FakeRow(
+                id="a_1", machine="laptop", scope_kind="global", project="", tool="claude",
+                path="settings.json", sha256="a" * 64, size_bytes=10, content='{"model":"x"}',
+                content_kind=ConfigContentKind.text, redactions=0, status=ConfigStatus.synced,
+                revision=2, first_seen_at=None, last_synced_at=None, changed_at=None,
+                removed_at=None,
+            ),
+            FakeRow(
+                id="a_2", machine="laptop", scope_kind="global", project="", tool="claude",
+                path="settings.local.json", sha256="b" * 64, size_bytes=20,
+                content='{"env": {"KEY": "«redacted»"}}', content_kind=ConfigContentKind.text,
+                redactions=1, status=ConfigStatus.synced, revision=1, first_seen_at=None,
+                last_synced_at=None, changed_at=None, removed_at=None,
+            ),
+        ]
+        monkeypatch.setattr(agents_service, "_list_sync", lambda **kwargs: (rows, len(rows)))
+
+        body = client.get(
+            "/ext/agents/pull", params={"machine": "laptop", "scope": "global", "tool": "claude"}
+        ).json()
+
+        assert body["restorable"] == 1
+        assert body["not_restorable"] == 1
+        masked = next(f for f in body["files"] if f["path"] == "settings.local.json")
+        assert masked["restorable"] is False and "masked" in masked["reason"]
+        assert next(f for f in body["files"] if f["path"] == "settings.json")["content"]
+
+    def test_removed_files_are_excluded_unless_asked_for(self, client, monkeypatch):
+        row = FakeRow(
+            id="a_3", machine="laptop", scope_kind="global", project="", tool="claude",
+            path="gone.md", sha256="c" * 64, size_bytes=5, content="bye",
+            content_kind=ConfigContentKind.text, redactions=0, status=ConfigStatus.removed,
+            revision=1, first_seen_at=None, last_synced_at=None, changed_at=None,
+            removed_at=None,
+        )
+        monkeypatch.setattr(agents_service, "_list_sync", lambda **kwargs: ([row], 1))
+
+        default = client.get(
+            "/ext/agents/pull", params={"machine": "laptop", "scope": "global", "tool": "claude"}
+        ).json()
+        assert default["files"] == []
+        assert "include_removed" in default["excluded"][0]["reason"]
+
+        asked = client.get(
+            "/ext/agents/pull",
+            params={"machine": "laptop", "scope": "global", "tool": "claude",
+                    "include_removed": "true"},
+        ).json()
+        assert [f["path"] for f in asked["files"]] == ["gone.md"]
+
+    def test_an_unknown_tool_is_still_refused(self, client):
+        response = client.get(
+            "/ext/agents/pull", params={"machine": "laptop", "scope": "global", "tool": "emacs"}
+        )
+        assert response.status_code == 422
+
+
+class TestRevisionApi:
+    def test_lists_history_without_content(self, client, monkeypatch, sqlite_db):
+        values = agents_service.prepare(BRANCH, "s.json", b"one")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+        agents_service._sync_sync(
+            BRANCH, [agents_service.prepare(BRANCH, "s.json", b"two")], prune=False,
+            now=datetime.now(UTC),
+        )
+
+        body = client.get(f"/ext/agents/files/{values['id']}/revisions").json()
+        assert body["current_revision"] == 2
+        assert [r["revision"] for r in body["revisions"]] == [2, 1]
+        assert all("content" not in r for r in body["revisions"])
+        assert body["revisions"][0]["current"] is True
+
+    def test_one_revision_carries_its_content(self, client, sqlite_db):
+        values = agents_service.prepare(BRANCH, "s.json", b"one")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+        agents_service._sync_sync(
+            BRANCH, [agents_service.prepare(BRANCH, "s.json", b"two")], prune=False,
+            now=datetime.now(UTC),
+        )
+
+        body = client.get(f"/ext/agents/files/{values['id']}/revisions/1").json()
+        assert body["content"] == "one"
+        assert body["current"] is False
+        assert body["restorable"] is True
+
+    def test_missing_file_and_missing_revision_are_both_404(self, client, sqlite_db):
+        assert client.get("/ext/agents/files/a_nope/revisions").status_code == 404
+        values = agents_service.prepare(BRANCH, "s.json", b"one")
+        agents_service._sync_sync(BRANCH, [values], prune=False, now=datetime.now(UTC))
+        assert client.get(f"/ext/agents/files/{values['id']}/revisions/9").status_code == 404

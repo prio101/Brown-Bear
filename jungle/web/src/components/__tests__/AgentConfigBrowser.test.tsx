@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentConfigBrowser } from "@/components/AgentConfigBrowser";
-import type { AgentConfig, AgentInventory } from "@/lib/api/schemas";
+import type { AgentConfig, AgentInventory, AgentRevision } from "@/lib/api/schemas";
 
 /**
  * Agent configuration browser (spec 008 §8.5).
@@ -96,10 +96,39 @@ function inventory(overrides: Partial<AgentInventory> = {}): AgentInventory {
 
 const SELECTION = { machine: "laptop", scope: "global", project: "", tool: "claude" };
 
-function stubFetch(detail: AgentConfig) {
+function revision(overrides: Partial<AgentRevision> = {}): AgentRevision {
+  return {
+    config_id: "a_1",
+    revision: 2,
+    sha256: "a".repeat(64),
+    size_bytes: 128,
+    content_kind: "text",
+    redactions: 0,
+    created_at: "2026-08-19T09:00:00+00:00",
+    replaced_at: null,
+    current: true,
+    restorable: true,
+    reason: null,
+    ...overrides,
+  };
+}
+
+/** The component makes three different calls; route by URL so a test can say what
+ * each one returns without caring about their order. */
+function stubFetch(detail: AgentConfig, revisions: AgentRevision[] = []) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({ ok: true, json: async () => detail })),
+    vi.fn(async (url: string) => {
+      if (url.includes("/revisions/")) {
+        const number = Number(url.split("/revisions/")[1]);
+        const found = revisions.find((r) => r.revision === number);
+        return { ok: Boolean(found), json: async () => found };
+      }
+      if (url.endsWith("/revisions")) {
+        return { ok: true, json: async () => ({ revisions, kept: 10 }) };
+      }
+      return { ok: true, json: async () => detail };
+    }),
   );
 }
 
@@ -214,5 +243,70 @@ describe("empty is not broken", () => {
       <AgentConfigBrowser inventory={inventory()} initial={[]} initialSelection={SELECTION} />,
     );
     expect(screen.getByText(/empty branch, not a/)).toBeTruthy();
+  });
+});
+
+
+describe("revision history", () => {
+  it("lists what is kept, and says how many the server keeps", async () => {
+    stubFetch(config({ revision: 2, content: "current" }), [
+      revision({ revision: 2, current: true }),
+      revision({ revision: 1, current: false, replaced_at: "2026-08-19T09:00:00+00:00" }),
+    ]);
+    render(
+      <AgentConfigBrowser
+        inventory={inventory()}
+        initial={[config({ revision: 2 })]}
+        initialSelection={SELECTION}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/History — 2 of the last 10 kept/)).toBeTruthy());
+    const list = screen.getByLabelText("Revision history");
+    expect(within(list).getByText(/rev 2 · current/)).toBeTruthy();
+  });
+
+  it("says which revisions cannot be written back", async () => {
+    stubFetch(config({ content: "current" }), [
+      revision({ revision: 2, current: true }),
+      revision({ revision: 1, current: false, redactions: 1, restorable: false,
+                 reason: "1 value(s) were masked before storage" }),
+    ]);
+    render(
+      <AgentConfigBrowser
+        inventory={inventory()}
+        initial={[config()]}
+        initialSelection={SELECTION}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getAllByText(/cannot be restored/).length).toBe(1));
+    expect(screen.getAllByText(/can be restored/).length).toBeGreaterThan(0);
+  });
+
+  it("never shows a past revision as though it were current", async () => {
+    stubFetch(config({ content: "current text" }), [
+      revision({ revision: 2, current: true }),
+      revision({
+        revision: 1,
+        current: false,
+        replaced_at: "2026-08-19T09:00:00+00:00",
+        content: "old text",
+      }),
+    ]);
+    render(
+      <AgentConfigBrowser
+        inventory={inventory()}
+        initial={[config()]}
+        initialSelection={SELECTION}
+      />,
+    );
+
+    const list = await screen.findByLabelText("Revision history");
+    fireEvent.click(within(list).getByText(/rev 1/));
+
+    await waitFor(() => expect(screen.getByText("old text")).toBeTruthy());
+    expect(screen.getByText(/Revision 1 \(not current\)/)).toBeTruthy();
+    expect(screen.getByText(/not what the machine is running/)).toBeTruthy();
   });
 });

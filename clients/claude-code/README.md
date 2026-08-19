@@ -6,10 +6,12 @@ Two hooks that put Brown Bear in front of Claude on any machine:
 |---|---|---|
 | `bb_context.py` | `UserPromptSubmit` | Before each prompt: POSTs it to `/ext/context`, injects a cached answer or retrieved chunks |
 | `bb_exchange.py` | `Stop` | After each turn: POSTs prompt + answer + token usage to `/ext/exchange` |
+| `bb_media.py hook` | `PostToolUse` (`Read`) | When Claude reads a PDF, image or document: stores the bytes and asks Claude for the text in English |
 
 Two commands you run yourself, rather than hooks: `bb_file.py` sends a file with
 the text this machine extracted from it, and `bb_sync.py` sends this machine's
-`.claude` / `.qwen` configuration. Both are documented at the end of this file.
+`.claude` / `.qwen` configuration. Both are documented at the end of this file,
+along with `bb_media.py`, which is both a hook and a pair of commands.
 
 Both **fail open and silent.** If the gateway is unreachable, unauthenticated,
 slow, or returns junk, they exit 0 with no output and Claude proceeds normally.
@@ -236,6 +238,59 @@ bytes cannot be checked without re-doing the extraction, so the extractor and th
 machine's hostname are recorded and shown beside the text on `/files`. Treat
 extracted text with the same scepticism as client-reported token counts.
 
+## Reading files into the memory — `bb_media.py` (spec 009)
+
+Spec 007 stores a file with the text a client extracted from it. On a machine with
+no `pdftotext` and no `tesseract` that text is empty, so every PDF and screenshot
+lands `stored` and unsearchable. **The one reader always present is Claude** — it
+reads PDFs and images natively and translates as a matter of course — so this hook
+splits ingestion in two and lets it do the reading.
+
+```
+Claude reads report-ja.pdf
+  → hook stores the BYTES, returns the file_id and the command to send the text
+  → Claude writes the English text (translating if needed), keeps the original
+  → bb_media.py attach f_<id> --text-file en.txt --source-text-file ja.txt \
+        --source-language ja --extractor "claude-opus-5" --file report-ja.pdf
+  → indexed, retrievable in English, with the original stored beside it
+```
+
+Brown Bear still extracts nothing. There is no translator in the stack to use even
+if we wanted one: `GET /ollama/api/tags` returns an embedding model and
+`smollm2:135m`, which would produce a confident mistranslation — worse than none.
+
+| Command | What it does |
+|---|---|
+| `bb_media.py hook` | the `PostToolUse` handler; reads the event on stdin |
+| `bb_media.py store <path>` | send a file's bytes with no text |
+| `bb_media.py attach <file_id> --text-file <p>` | send the reading; `-` reads stdin |
+
+| Variable | Meaning |
+|---|---|
+| `BB_MEDIA_MAX_BYTES` | skip files larger than this (default 50 MB, the server's own cap) |
+| `BB_MEDIA_TIMEOUT` | seconds for a request (default 60) |
+| `BB_MEDIA_TYPES` | extra extensions to treat as media, comma separated |
+| `BB_ENABLED` | `0` disables the hook without touching `settings.json` |
+
+**Nothing is automatic, deliberately.** The hook stores the bytes and *asks*;
+Claude decides whether the file is worth remembering. A screenshot of a terminal
+should not become a corpus entry, and no rule in a hook can tell that from a
+scanned contract.
+
+**Which files trigger it.** An allowlist of extensions — `.pdf`, images, Office and
+OpenDocument formats, `.epub`, `.rtf`. Source files and Markdown are ignored:
+Claude reads those constantly, they are already in the repository, and uploading
+them buries the documents that are only readable as pictures.
+
+**The English text is what gets indexed.** The original language is stored beside
+it under a labelled header, so a reader can check the translation against its
+source — but it is not embedded, or one document would answer the same question
+twice, in two languages, at two different scores.
+
+**Against an older Brown Bear** — one without `POST /ext/files/{id}/extraction` —
+`attach` falls back to re-sending the bytes with the text attached, which every
+version since spec 007 accepts. Pass `--file` so it has something to re-send.
+
 ## Syncing configuration — `bb_sync.py` (spec 008)
 
 Sends this machine's agent configuration to Brown Bear so `/agents` can show what
@@ -267,6 +322,33 @@ machine, and a grouped count of what would not:
     - 125 file(s) skipped: file-history/ is runtime state, not configuration
     - 60 file(s) skipped: projects/ is runtime state, not configuration
 ```
+
+### Getting it back — `--pull` (spec 010)
+
+Brown Bear keeps the last 10 contents of every synced file, so a sync is a backup
+rather than just a copy. Pulling is on demand and never automatic; nothing here
+ever pushes configuration to a machine.
+
+```bash
+python3 bb_sync.py --global --pull            # print what it would write
+python3 bb_sync.py --global --pull --apply    # actually write it
+python3 bb_sync.py --global --pull --apply --force   # overwrite files that differ
+```
+
+Three refusals, each because the alternative is a file that looks right and is not:
+
+| Refusal | Why |
+|---|---|
+| a file whose values were **masked** | writing `«redacted»` where an API key belongs produces a config that looks correct and fails at runtime. The server decides this and says so per file; the client only obeys. |
+| a file that **differs locally** | restoring is for a machine that lost something, not for silently reverting work in progress. `--force` overrides. |
+| **anything at all** without `--apply` | a restore that runs by accident is the one failure mode worse than no restore. |
+
+A file deleted from the machine is kept and marked `removed`; it is not restored
+unless you pass `--include-removed`, because restoring one resurrects something
+somebody deleted.
+
+The directory does not have to exist. `--pull --apply` on a machine that lost
+`~/.claude` entirely recreates it, nested paths included.
 
 ### What is sent, and what is not
 
@@ -312,7 +394,7 @@ kept and shown, never deleted. That is wrong for a partial push, so pass
 ### Every request needs a User-Agent
 
 Cloudflare rejects Python's default `Python-urllib/3.x` agent with `403` (error
-1010, browser-integrity check). All four scripts set `brown-bear-client/1.0` for
+1010, browser-integrity check). All five scripts set `brown-bear-client/1.0` for
 that reason. Because the hooks **fail open and silent**, omitting it does not
 produce an error — it produces a gateway that appears to work and never returns
 anything. If you write your own client, set a User-Agent.

@@ -18,6 +18,7 @@ from typing import Annotated, Any
 import anyio.to_thread
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel
 
 from brownbear import files as files_service
 from brownbear import gateway
@@ -290,6 +291,63 @@ async def preview(file_id: str, request: Request) -> Any:
             "X-Frame-Options": "SAMEORIGIN",
         },
     )
+
+
+class Extraction(BaseModel):
+    """What a reader of the file sends back (spec 009).
+
+    `text` is the English reading and is what gets indexed. `source_text` is the
+    original language, stored beside it so the translation can be checked. Neither
+    is produced here — Brown Bear still extracts nothing.
+    """
+
+    text: str
+    source_text: str | None = None
+    #: Language of `text`. English by default, because that is what the retrieval
+    #: corpus is expected to be uniform in.
+    language: str = "en"
+    #: Language of `source_text`, when it differs.
+    source_language: str | None = None
+    #: Who read it — "claude-opus-5", "pdftotext 24.02". Recorded, never verified.
+    extractor: str | None = None
+    extracted_by: str | None = None
+    tags: str | None = None
+
+
+@router.post("/{file_id}/extraction")
+async def attach_extraction(file_id: str, payload: Extraction) -> dict[str, Any]:
+    """Attach an extraction to a file whose bytes are already here.
+
+    Splits ingestion in two, which is what makes a read-time hook possible: the
+    bytes go up the moment a file is touched, and the text follows from whoever
+    actually read it. It also answers spec 007's open question about re-extraction —
+    a better reading of an existing file no longer requires re-sending the bytes.
+
+    Replaces the file's chunks rather than adding to them. Two readings of one
+    document, both retrievable, is worse than one poor reading.
+    """
+    if len(payload.text) > files_service.MAX_EXTRACTION_CHARS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"extraction exceeds {files_service.MAX_EXTRACTION_CHARS} characters",
+        )
+
+    result = await files_service.reattach(
+        file_id,
+        text=payload.text,
+        source_text=payload.source_text,
+        language=payload.language,
+        source_language=payload.source_language,
+        extractor=payload.extractor,
+        extracted_by=payload.extracted_by,
+        tags=payload.tags,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no such file: {file_id}. Send the bytes to POST /ext/files first.",
+        )
+    return result
 
 
 @router.delete("/{file_id}")

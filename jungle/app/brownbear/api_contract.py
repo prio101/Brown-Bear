@@ -90,6 +90,15 @@ CONTRACT: tuple[Endpoint, ...] = (
         "an image or a PDF. The only route served inline rather than as a download.",
     ),
     Endpoint(
+        "POST", "/ext/files/{file_id}/extraction", Reach.AUTHENTICATED, "Context gateway",
+        "Attach an extraction to a file whose bytes are already stored: `{text, "
+        "source_text?, language, source_language?, extractor?, tags?}`. Splits "
+        "ingestion in two, so a hook can send the bytes the moment a file is touched "
+        "and whoever actually read it sends the text afterwards. `text` is indexed; "
+        "`source_text` is stored beside it so a translation can be checked. Replaces "
+        "the file's chunks rather than adding to them.",
+    ),
+    Endpoint(
         "DELETE", "/ext/files/{file_id}", Reach.AUTHENTICATED, "Context gateway",
         "Remove the row, the blob and the file's chunks together. Leaving the chunks "
         "would keep retrieval serving a file that no longer exists.",
@@ -125,6 +134,23 @@ CONTRACT: tuple[Endpoint, ...] = (
         "GET", "/ext/agents/files/{config_id}", Reach.AUTHENTICATED, "Agent configuration",
         "One file with its stored content. Stored means redacted: the pre-redaction "
         "text is never written down, so no endpoint can return it.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents/pull", Reach.AUTHENTICATED, "Agent configuration",
+        "Everything needed to write one branch back onto a machine — on demand, "
+        "never pushed. Every entry carries `restorable` and, when false, the reason: "
+        "a value that was masked before storage cannot be written back, because the "
+        "result would look right and not work.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents/files/{config_id}/revisions", Reach.AUTHENTICATED, "Agent configuration",
+        "A file's past contents, newest first, without the text. Written only when "
+        "the content changes, so the history grows with edits rather than syncs.",
+    ),
+    Endpoint(
+        "GET", "/ext/agents/files/{config_id}/revisions/{number}", Reach.AUTHENTICATED,
+        "Agent configuration",
+        "One past content, as it was stored — redacted where anything was masked.",
     ),
     Endpoint(
         "DELETE", "/ext/agents/files/{config_id}", Reach.AUTHENTICATED, "Agent configuration",

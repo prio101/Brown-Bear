@@ -211,6 +211,62 @@ async def files(
     }
 
 
+@router.get("/pull")
+async def pull(
+    machine: str,
+    tool: str,
+    scope: str = "project",
+    project: str = "",
+    include_removed: bool = False,
+) -> dict[str, Any]:
+    """Everything needed to write one branch back onto a machine.
+
+    On demand, and only that: nothing here pushes configuration anywhere, and this
+    answers a question a machine asked. It is the one read path that returns
+    content in bulk, so every entry says whether it can actually be written back —
+    a masked value restored verbatim produces a file that looks right and does not
+    work, and a client must be able to refuse it without knowing the masking rules.
+    """
+    return await agents_service.pull(
+        _branch(machine, scope, project, tool), include_removed=include_removed
+    )
+
+
+@router.get("/files/{config_id}/revisions")
+async def revisions(config_id: str) -> dict[str, Any]:
+    """A file's history, newest first, without content.
+
+    Content is per revision on request: a history of ten versions of every file in
+    a branch is the one response that would grow without bound.
+    """
+    record = await agents_service.get(config_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"no such config file: {config_id}")
+
+    rows = await agents_service.revisions(config_id)
+    return {
+        "config_id": config_id,
+        "path": record.path,
+        "branch": agents_service.branch_label(
+            record.machine, record.scope_kind, record.project, record.tool
+        ),
+        "current_revision": record.revision,
+        "kept": get_settings().config_revisions_kept,
+        "revisions": [agents_service.revision_to_dict(row) for row in rows],
+    }
+
+
+@router.get("/files/{config_id}/revisions/{number}")
+async def revision(config_id: str, number: int) -> dict[str, Any]:
+    """One past content, with the text as it was stored — that is, redacted."""
+    row = await agents_service.revision(config_id, number)
+    if row is None:
+        raise HTTPException(
+            status_code=404, detail=f"no revision {number} of {config_id}"
+        )
+    return agents_service.revision_to_dict(row, include_content=True)
+
+
 @router.get("/files/{config_id}")
 async def detail(config_id: str) -> dict[str, Any]:
     """One file with its stored — that is, redacted — content."""

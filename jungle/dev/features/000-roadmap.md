@@ -36,6 +36,8 @@ historical token charts; `/metrics` scrapes clean.
 | **006** — API doc at `/api-doc/v1`, edge contract documented with a drift check | Decide whether to disable FastAPI's CDN-dependent `/docs` and `/redoc` |
 | **BB-301** — memory graph at `/graph`, streamed logs at `/logs` | — |
 | — | **007** — file ingest with client-side extraction. Picks up the "PDF ingest" gap listed above and widens it: today `/ext/documents` takes a JSON string only, so nothing on disk is reachable by retrieval |
+| **010** — configuration history and restore: last 10 revisions per file, `GET /ext/agents/pull`, `bb_sync.py --pull`. Answers 008's open question | A masked file is not restorable at any revision; the honest fix is client-held encryption, which is a key-management feature |
+| **009** — Claude-side reading: `POST /ext/files/{id}/extraction`, the `PostToolUse` media hook. Closes 007's re-extraction question | Nothing forces Claude to follow through on the hook's request; a "read but never described" count would show how often that happens |
 | **008** — agent configuration sync: `/ext/agents`, the `/agents` page, `bb_sync.py`. Closes half of G7 | Nothing has synced through the tunnel yet — the code is not deployed on the live instance. Migration `0007` is verified against PostgreSQL 16, including its downgrade |
 
 **Phase 4 started early (2026-07-31).** The context gateway is live and reachable through the

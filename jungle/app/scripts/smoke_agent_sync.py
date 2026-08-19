@@ -196,10 +196,11 @@ def main() -> int:
 
     print("\n8. the inventory tree")
     tree = client.get("/ext/agents").json()
-    check("machines", tree["totals"]["machines"], 1)
-    check("files", tree["totals"]["files"], 4)
-    check("removed", tree["totals"]["removed"], 1)
-    machine = tree["machines"][0]
+    # Scoped to this script's own machine, never to the totals: run against a real
+    # instance and the totals include every other machine that has ever synced.
+    machine = next(m for m in tree["machines"] if m["machine"] == "smoke-box.local")
+    check("files on this machine", machine["files"], 4)
+    check("removed on this machine", machine["removed"], 1)
     check("scope labels", [s["label"] for s in machine["scopes"]], ["Global", "brownbear"])
     check("global tool", machine["scopes"][0]["tools"][0]["tool"], "qwen")
     check("project tool", machine["scopes"][1]["tools"][0]["tool"], "claude")
@@ -228,10 +229,46 @@ def main() -> int:
     # prune defaults to false on the API, so the earlier files are still there.
     check("no reconciliation without prune", zipped["removed"], 0)
 
-    print("\n10. delete purges the row")
+    print("\n10. the edited file's history (spec 010)")
+    history = client.get(f"/ext/agents/files/{edited['config_id']}/revisions").json()
+    check("revisions kept", [r["revision"] for r in history["revisions"]], [2, 1])
+    check("newest is current", history["revisions"][0]["current"], True)
+    check("older is superseded", history["revisions"][1]["current"], False)
+    first = client.get(f"/ext/agents/files/{edited['config_id']}/revisions/1").json()
+    check(
+        "revision 1 still holds its content",
+        json.loads(first["content"])["model"],
+        "claude-opus-5",
+    )
+    check("and is restorable", first["restorable"], True)
+
+    print("\n11. pull — what could actually be written back")
+    pulled = client.get(
+        "/ext/agents/pull",
+        params={"machine": "smoke-box.local", "scope": "project", "project": "brownbear",
+                "tool": "claude"},
+    ).json()
+    paths = sorted(f["path"] for f in pulled["files"])
+    check("removed files are excluded by default", "settings.local.json" not in paths, True)
+    check("content comes back", all(f.get("content") for f in pulled["files"]), True)
+    with_removed = client.get(
+        "/ext/agents/pull",
+        params={"machine": "smoke-box.local", "scope": "project", "project": "brownbear",
+                "tool": "claude", "include_removed": "true"},
+    ).json()
+    masked = next(f for f in with_removed["files"] if f["path"] == "settings.local.json")
+    check("a masked file is refused, with a reason", masked["restorable"], False)
+    check("and the reason says why", "masked" in (masked["reason"] or ""), True)
+
+    print("\n12. delete purges the row, and its history with it")
     purge = client.delete(f"/ext/agents/files/{edited['config_id']}").json()
     check("deleted", purge["deleted"], True)
     check("gone", client.get(f"/ext/agents/files/{edited['config_id']}").status_code, 404)
+    check(
+        "its history went with it",
+        client.get(f"/ext/agents/files/{edited['config_id']}/revisions").status_code,
+        404,
+    )
     after = client.get("/ext/agents/files", params=branch_params).json()
     check("one fewer file in the branch", after["total"], 4)
 

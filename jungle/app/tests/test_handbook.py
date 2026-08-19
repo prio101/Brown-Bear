@@ -168,6 +168,23 @@ class TestRenderings:
         for layer in payload["layers"]:
             assert layer["name"] in markdown_body
 
+    def test_states_what_is_stored_that_is_not_memory(self, client):
+        """Spec 008 added a store that belongs to none of the four layers. A reader
+        deciding how much to trust an /ext/context response has to be able to learn
+        that configuration exists and can never come back from it — otherwise the
+        handbook is complete about the memory and silent about the stack."""
+        body = client.get("/api-doc/v1/handbook.md").text
+        assert "/ext/agents/sync" in body
+        assert "never come back from /ext/context" in body
+
+    def test_the_identity_rule_covers_every_prefix_in_use(self, client):
+        """A reader meeting an `f_…` or `a_…` id must find it here rather than by
+        grepping the source."""
+        defaults = next(
+            layer for layer in handbook.LAYERS if layer.key == "key_based"
+        ).declared_defaults
+        assert set(defaults.values()) >= {"x_", "c_", "f_", "a_"}
+
     def test_names_no_secret(self, client):
         for path in ("/api-doc/v1/handbook", "/api-doc/v1/handbook.md"):
             body = client.get(path).text

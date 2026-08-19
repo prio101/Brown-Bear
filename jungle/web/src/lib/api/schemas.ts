@@ -454,6 +454,38 @@ export const AgentConfigListSchema = z.object({
   offset: z.number(),
 });
 
+export const AgentRevisionSchema = z.object({
+  config_id: z.string(),
+  revision: z.number(),
+  sha256: z.string(),
+  size_bytes: z.number(),
+  content_kind: z.string(),
+  redactions: z.number(),
+  created_at: z.string().nullable(),
+  /** Null on the current content; a timestamp on everything superseded. */
+  replaced_at: z.string().nullable(),
+  current: z.boolean(),
+  /** Whether this content could be written back to a machine. A masked value
+   * cannot: the result would look right and not work. */
+  restorable: z.boolean(),
+  reason: z.string().nullable(),
+  content: z.string().nullable().optional(),
+});
+
+export const AgentRevisionListSchema = z.object({
+  config_id: z.string(),
+  path: z.string(),
+  branch: z.string(),
+  current_revision: z.number(),
+  /** How many the server keeps. Shown, because "3 revisions" means something
+   * different when the cap is 3. */
+  kept: z.number(),
+  revisions: z.array(AgentRevisionSchema),
+});
+
+export type AgentRevision = z.infer<typeof AgentRevisionSchema>;
+export type AgentRevisionList = z.infer<typeof AgentRevisionListSchema>;
+
 export type AgentTool = z.infer<typeof AgentToolSchema>;
 export type AgentScope = z.infer<typeof AgentScopeSchema>;
 export type AgentMachine = z.infer<typeof AgentMachineSchema>;

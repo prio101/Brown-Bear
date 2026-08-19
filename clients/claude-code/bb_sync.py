@@ -42,6 +42,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -203,6 +204,73 @@ def walk(root: Path, *, everything: bool) -> list[tuple[Path, str | None]]:
     return found
 
 
+def pull(url: str, token: str, params: dict[str, str]) -> dict | None:
+    query = "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v != "")
+    request = urllib.request.Request(
+        f"{url}/ext/agents/pull?{query}",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        return json.load(response)
+
+
+def restore(payload: dict, root: Path, *, apply: bool, force: bool) -> int:
+    """Write a pulled branch back onto this machine.
+
+    Three refusals, and each exists because the alternative is a file that looks
+    right and is not:
+
+      * **Never a file the server marked unrestorable.** A masked value written
+        back verbatim produces a `settings.json` with `«redacted»` where an API key
+        belongs. The server computes that verdict; this only obeys it.
+      * **Never over a file whose content differs**, unless --force. Restoring is
+        for a machine that lost something, not for silently reverting work.
+      * **Nothing at all without --apply.** A restore that runs by accident is the
+        one failure mode worse than no restore.
+    """
+    written = skipped = differing = 0
+    for entry in payload.get("files", []):
+        target = root / entry["path"]
+        if not entry.get("restorable"):
+            print(f"  refuse  {entry['path']}: {entry.get('reason')}")
+            skipped += 1
+            continue
+        content = entry.get("content")
+        if content is None:
+            print(f"  refuse  {entry['path']}: no content stored")
+            skipped += 1
+            continue
+        if target.is_file():
+            current = target.read_text(encoding="utf-8", errors="replace")
+            if current == content:
+                print(f"  same    {entry['path']}")
+                continue
+            if not force:
+                print(f"  differs {entry['path']}  (pass --force to overwrite)")
+                differing += 1
+                continue
+        if apply:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            print(f"  wrote   {entry['path']}  (revision {entry.get('revision')})")
+        else:
+            print(f"  would write {entry['path']}  (revision {entry.get('revision')})")
+        written += 1
+
+    for entry in payload.get("excluded", []):
+        print(f"  skip    {entry['path']}: {entry['reason']}")
+
+    verb = "wrote" if apply else "would write"
+    print(f"\n{verb} {written} file(s); {skipped} refused, {differing} differ")
+    if not apply and written:
+        print("nothing was written — re-run with --apply")
+    return 0 if apply or not written else 0
+
+
 def project_default() -> str:
     if value := os.environ.get("BB_PROJECT"):
         return value
@@ -280,6 +348,18 @@ def main() -> int:
         help="walk the whole directory instead of the known configuration files; "
              "on a global ~/.claude this includes conversation transcripts and caches",
     )
+    parser.add_argument(
+        "--pull", action="store_true",
+        help="fetch this branch back from Brown Bear instead of sending it; prints "
+             "what it would write unless --apply is given",
+    )
+    parser.add_argument("--apply", action="store_true", help="with --pull: actually write the files")
+    parser.add_argument(
+        "--force", action="store_true",
+        help="with --pull --apply: overwrite a file whose content differs",
+    )
+    parser.add_argument("--include-removed", action="store_true",
+                        help="with --pull: also restore files deleted from the machine")
     parser.add_argument("--dry-run", action="store_true")
     parser.set_defaults(prune=True)
     args = parser.parse_args()
@@ -287,6 +367,40 @@ def main() -> int:
     root = args.dir or (
         Path.home() / f".{args.tool}" if args.is_global else Path.cwd() / f".{args.tool}"
     )
+    # Deliberately NOT checked before a pull: the case a restore exists for is a
+    # machine that no longer has the directory. `restore` creates what it needs.
+
+    machine_name = args.machine or machine_default()
+    scope_name = "global" if args.is_global else "project"
+    project_name = "" if args.is_global else (args.project or project_default())
+
+    if args.pull:
+        url = (os.environ.get("BB_GATEWAY_URL") or "").rstrip("/")
+        token = os.environ.get("BB_EDGE_TOKEN") or ""
+        if not url or not token:
+            print("BB_GATEWAY_URL and BB_EDGE_TOKEN must be set", file=sys.stderr)
+            return 2
+        try:
+            payload = pull(url, token, {
+                "machine": machine_name,
+                "scope": scope_name,
+                "project": project_name,
+                "tool": args.tool,
+                "include_removed": "true" if args.include_removed else "",
+            })
+        except urllib.error.HTTPError as exc:
+            print(f"pull failed ({exc.code}): {exc.read().decode()[:300]}", file=sys.stderr)
+            return 1
+        except OSError as exc:
+            print(f"pull failed: {exc}", file=sys.stderr)
+            return 1
+        if not payload:
+            print("pull returned nothing", file=sys.stderr)
+            return 1
+        print(f"{payload['branch']} → {root}")
+        print(f"  {payload['restorable']} restorable, {payload['not_restorable']} not")
+        return restore(payload, root, apply=args.apply, force=args.force)
+
     if not root.is_dir():
         print(f"no configuration directory at {root}", file=sys.stderr)
         return 2
@@ -329,9 +443,7 @@ def main() -> int:
     if archive is not None:
         archive.close()
 
-    machine = args.machine or machine_default()
-    scope = "global" if args.is_global else "project"
-    project = "" if args.is_global else (args.project or project_default())
+    machine, scope, project = machine_name, scope_name, project_name
     count = len(payload) if archive is None else len(zipfile.ZipFile(io.BytesIO(archive_buffer.getvalue())).infolist())
 
     if args.dry_run:

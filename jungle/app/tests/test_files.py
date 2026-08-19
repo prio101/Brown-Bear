@@ -253,3 +253,122 @@ class TestDeletePersists:
         assert files_service._get_sync(record.id) is not None
         assert files_service._delete_sync(record.id) is not None
         assert files_service._get_sync(record.id) is None
+
+
+class TestAttachExtraction:
+    """Spec 009: the text arrives after the bytes, from whoever read the file.
+
+    The two things worth pinning are that a re-extraction *replaces* the old chunks
+    rather than adding to them, and that the original-language text is stored but
+    never indexed — retrieval has to behave the same whatever language a document
+    started in.
+    """
+
+    @pytest.fixture
+    def attached(self, monkeypatch):
+        state = {"indexed": [], "deleted": [], "rows": []}
+
+        record = type(
+            "Row",
+            (),
+            {
+                "id": "f_" + "a" * 32,
+                "sha256": "a" * 64,
+                "source": "handbook.pdf",
+                "project": "brownbear",
+                "media_type": "application/pdf",
+                "status": FileStatus.stored,
+                "chunk_count": 0,
+                "tags": "auto",
+            },
+        )()
+        monkeypatch.setattr(
+            files_service, "_get_sync", lambda i: record if i == record.id else None
+        )
+        monkeypatch.setattr(
+            files_service, "_upsert_sync", lambda values: state["rows"].append(values)
+        )
+
+        async def _index(**kwargs):
+            state["indexed"].append(kwargs["text"])
+            return {"chunks_stored": 4}
+
+        async def _collections():
+            return object()
+
+        async def _delete(collections, file_id):
+            state["deleted"].append(file_id)
+            return 7
+
+        monkeypatch.setattr(files_service, "index_extraction", _index)
+        monkeypatch.setattr(files_service.gateway, "ensure_collections", _collections)
+        monkeypatch.setattr(files_service.gateway, "delete_by_file", _delete)
+        return state
+
+    def test_attaches_and_reindexes(self, client, attached):
+        response = client.post(
+            f"/ext/files/f_{'a' * 32}/extraction",
+            json={"text": "The retention policy is thirty days.", "extractor": "claude-opus-5"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == FileStatus.indexed.value
+        assert body["chunks_stored"] == 4
+
+    def test_the_old_chunks_go_first(self, client, attached):
+        """Two readings of one document, both retrievable, is worse than one poor
+        reading."""
+        client.post(f"/ext/files/f_{'a' * 32}/extraction", json={"text": "a better reading"})
+
+        assert attached["deleted"] == ["f_" + "a" * 32]
+
+    def test_the_translation_is_indexed_and_the_original_is_only_stored(self, client, attached):
+        response = client.post(
+            f"/ext/files/f_{'a' * 32}/extraction",
+            json={
+                "text": "The retention policy is thirty days.",
+                "source_text": "保持期間は三十日です。",
+                "language": "en",
+                "source_language": "ja",
+                "extractor": "claude-opus-5",
+            },
+        )
+
+        body = response.json()
+        assert body["translated"] is True
+        # Indexed: English only, so one document cannot answer twice at two scores.
+        assert attached["indexed"] == ["The retention policy is thirty days."]
+        # Stored: both, so the translation can be checked against its source.
+        stored = attached["rows"][-1]["extracted_text"]
+        assert "保持期間は三十日です。" in stored
+        assert "original (ja)" in stored
+        assert {"lang-en", "src-ja", "translated"} <= set(body["tags"])
+
+    def test_an_unknown_file_says_where_the_bytes_go(self, client, attached):
+        response = client.post(f"/ext/files/f_{'b' * 32}/extraction", json={"text": "x"})
+        assert response.status_code == 404
+        assert "POST /ext/files" in response.json()["detail"]
+
+    def test_an_empty_extraction_changes_nothing(self, client, attached):
+        response = client.post(f"/ext/files/f_{'a' * 32}/extraction", json={"text": "   "})
+        assert response.status_code == 200
+        assert attached["indexed"] == []
+        assert "nothing was changed" in response.json()["error"]
+
+    def test_an_oversized_extraction_is_refused(self, client, attached):
+        response = client.post(
+            f"/ext/files/f_{'a' * 32}/extraction",
+            json={"text": "x" * (files_service.MAX_EXTRACTION_CHARS + 1)},
+        )
+        assert response.status_code == 413
+
+    def test_indexing_failure_leaves_the_file_retryable(self, client, attached, monkeypatch):
+        async def _boom(**kwargs):
+            raise RuntimeError("chroma is unwell")
+
+        monkeypatch.setattr(files_service, "index_extraction", _boom)
+        response = client.post(f"/ext/files/f_{'a' * 32}/extraction", json={"text": "some text"})
+
+        assert response.status_code == 200
+        assert response.json()["status"] == FileStatus.failed.value

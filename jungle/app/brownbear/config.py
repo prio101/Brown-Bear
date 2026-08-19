@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     # current. A sync is a deliberate client action, so silence is expected — and
     # silence must never be rendered as an up-to-date configuration.
     config_stale_hours: int = 24
+    # How many past contents of one configuration file to keep (spec 010). Bounded
+    # deliberately: after blobs, an unbounded history is the second thing in this
+    # stack that would grow forever with nothing pruning it. Ten covers "what did I
+    # change last week"; it is not an archive.
+    config_revisions_kept: int = 10
 
     # Two collections, never one: a cache hit must be a prior *answer*, and a
     # mixed collection lets a document paragraph clear the threshold and get

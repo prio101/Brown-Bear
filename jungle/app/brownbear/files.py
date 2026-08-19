@@ -419,6 +419,136 @@ async def store(
     }
 
 
+async def reattach(
+    identifier: str,
+    *,
+    text: str,
+    source_text: str | None = None,
+    language: str = "en",
+    source_language: str | None = None,
+    extractor: str | None = None,
+    extracted_by: str | None = None,
+    tags: str | None = None,
+) -> dict[str, Any] | None:
+    """Attach an extraction to a file whose bytes are already stored (spec 009).
+
+    This is the half of ingestion that a *reader* of the file does. The bytes can
+    arrive from a hook the moment a file is touched, with no text at all; the text
+    arrives afterwards from whoever actually read and understood it — in practice
+    Claude, which reads PDFs and images natively and can translate them. Nothing
+    here extracts or translates anything, exactly as in spec 007: it stores what it
+    is handed and records who handed it over.
+
+    Two things it does that a plain re-upload cannot:
+
+    **The old chunks go first.** Re-extracting a file that was already indexed would
+    otherwise leave both versions retrievable, and a corpus that returns two
+    different readings of one document is worse than one that returns a poor
+    reading. `gateway.delete_by_file` is the same call `remove()` uses.
+
+    **`text` is indexed; `source_text` is only stored.** The searchable text is the
+    English one, so retrieval behaves the same for every document whatever language
+    it started in. The original is kept beside it for a human to check the
+    translation against — a translation nobody can compare to its source has the
+    same problem as a chunk nobody can compare to its file.
+    """
+    record = await get(identifier)
+    if record is None:
+        return None
+
+    english = (text or "").strip()[:MAX_EXTRACTION_CHARS]
+    if not english:
+        return {
+            "file_id": identifier,
+            "status": str(record.status),
+            "chunks_stored": record.chunk_count,
+            "error": "empty extraction; nothing was changed",
+        }
+
+    original = (source_text or "").strip()
+    composed = english
+    if original:
+        # Headed, not merged: a reader has to be able to tell which half is the
+        # translation and what produced it.
+        label = source_language or "source language"
+        composed = (
+            f"{english}\n\n"
+            f"--- original ({label}), as read by {extractor or 'an unnamed reader'} ---\n"
+            f"{original}"
+        )[:MAX_EXTRACTION_CHARS]
+
+    merged_tags = normalise_tags(
+        ",".join(filter(None, [record.tags, tags, f"lang-{language}" if language else None,
+                               f"src-{source_language}" if source_language else None,
+                               "translated" if original else None]))
+    )
+
+    removed_chunks = 0
+    try:
+        collections = await gateway.ensure_collections()
+        removed_chunks = await gateway.delete_by_file(collections, identifier)
+    except Exception:  # noqa: BLE001
+        # Best effort, and said out loud in the response: proceeding leaves both
+        # readings retrievable, which the caller needs to know about.
+        logger.exception("could not clear old chunks for %s", identifier)
+
+    base: dict[str, Any] = {
+        "id": identifier,
+        "extracted_text": composed,
+        "extractor": extractor,
+        "extracted_by": extracted_by,
+        "tags": merged_tags,
+        "error": None,
+    }
+
+    try:
+        result = await index_extraction(
+            record_id=identifier,
+            # The English half only. Indexing the original as well would make one
+            # document answer twice, in two languages, at different scores.
+            text=english,
+            source=record.source,
+            project=record.project,
+            media_type=record.media_type,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("re-indexing failed for %s", identifier)
+        await anyio.to_thread.run_sync(
+            _upsert_sync,
+            {**base, "status": FileStatus.failed, "error": f"{type(exc).__name__}: {exc}"[:2000]},
+        )
+        return {
+            "file_id": identifier,
+            "status": FileStatus.failed.value,
+            "chunks_stored": 0,
+            "chunks_removed": removed_chunks,
+            "error": type(exc).__name__,
+        }
+
+    stored_chunks = int(result.get("chunks_stored", 0))
+    await anyio.to_thread.run_sync(
+        _upsert_sync,
+        {
+            **base,
+            "status": FileStatus.indexed,
+            "chunk_count": stored_chunks,
+            "indexed_at": datetime.now(UTC),
+        },
+    )
+    return {
+        "file_id": identifier,
+        "status": FileStatus.indexed.value,
+        "chunks_stored": stored_chunks,
+        "chunks_removed": removed_chunks,
+        "extracted_chars": len(composed),
+        "indexed_chars": len(english),
+        "language": language,
+        "source_language": source_language,
+        "translated": bool(original),
+        "tags": merged_tags.split(",") if merged_tags else [],
+    }
+
+
 async def remove(identifier: str) -> dict[str, Any] | None:
     """Delete a file, its blob and its chunks together.
 

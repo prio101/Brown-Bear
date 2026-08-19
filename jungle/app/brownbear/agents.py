@@ -38,11 +38,17 @@ from typing import Any
 
 import anyio.to_thread
 from sqlalchemy import Integer, case, func, select
+from sqlalchemy.orm import Session
 
 from brownbear import gateway
 from brownbear.config import get_settings
 from brownbear.db import session_scope
-from brownbear.models.agents import AgentConfig, ConfigContentKind, ConfigStatus
+from brownbear.models.agents import (
+    AgentConfig,
+    AgentConfigRevision,
+    ConfigContentKind,
+    ConfigStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +152,16 @@ def config_id(machine: str, scope_kind: str, project: str, tool: str, path: str)
     """
     key = "\0".join((machine, scope_kind, project, tool, path)).encode()
     return f"a_{hashlib.sha256(key).hexdigest()[:32]}"
+
+
+def revision_id(config_id: str, revision: int) -> str:
+    """Identity of one past content, so re-writing it is an upsert.
+
+    The Key Based layer's rule applied to history: a retried sync must not leave
+    two rows claiming to be revision 4 of the same file.
+    """
+    key = f"{config_id}\0{revision}".encode()
+    return f"r_{hashlib.sha256(key).hexdigest()[:32]}"
 
 
 def branch_label(machine: str, scope_kind: str, project: str, tool: str) -> str:
@@ -386,8 +402,75 @@ def _branch_filter(query, branch: Branch):
     )
 
 
-def _apply(record: AgentConfig, incoming: dict[str, Any], now: datetime) -> str:
-    """Update a row in place and say what happened to it.
+def _record_revision(session: Session, record: AgentConfig, now: datetime) -> None:
+    """Snapshot a file's current content as a revision, and prune the tail.
+
+    Called only when the content actually changed, so the table grows with edits
+    rather than with syncs — which is the difference between a machine that syncs
+    on every session and one that edits its settings twice a year.
+
+    Retention is bounded and stated: without a cap this is the second thing in the
+    stack after blobs to grow forever with nothing pruning it.
+    """
+    keep = max(1, get_settings().config_revisions_kept)
+
+    previous = session.scalars(
+        select(AgentConfigRevision)
+        .where(
+            AgentConfigRevision.config_id == record.id,
+            AgentConfigRevision.replaced_at.is_(None),
+        )
+    ).all()
+    for row in previous:
+        if row.revision != record.revision:
+            row.replaced_at = now
+
+    identifier = revision_id(record.id, record.revision)
+    existing = session.get(AgentConfigRevision, identifier)
+    if existing is None:
+        session.add(
+            AgentConfigRevision(
+                id=identifier,
+                config_id=record.id,
+                revision=record.revision,
+                sha256=record.sha256,
+                size_bytes=record.size_bytes,
+                content=record.content,
+                content_kind=record.content_kind,
+                redactions=record.redactions,
+                created_at=now,
+                replaced_at=None,
+            )
+        )
+    else:
+        existing.sha256 = record.sha256
+        existing.content = record.content
+        existing.content_kind = record.content_kind
+        existing.redactions = record.redactions
+        existing.size_bytes = record.size_bytes
+        existing.replaced_at = None
+
+    session.flush()
+    stale = list(
+        session.scalars(
+            select(AgentConfigRevision)
+            .where(AgentConfigRevision.config_id == record.id)
+            .order_by(AgentConfigRevision.revision.desc())
+            .offset(keep)
+        )
+    )
+    for row in stale:
+        session.delete(row)
+
+
+def _apply(record: AgentConfig, incoming: dict[str, Any], now: datetime) -> tuple[str, bool]:
+    """Update a row in place; return what happened and whether the CONTENT changed.
+
+    Two separate facts, and conflating them was a bug: a file that merely came back
+    from `removed` is reported "updated" while its content is identical, and
+    snapshotting that would fill the history with duplicate revisions. The caller
+    needs both answers, so both are returned rather than re-derived — after this
+    runs, `record.sha256` equals the incoming digest either way.
 
     Change is judged on the digest of the content *as received*, never on the
     stored text: the stored text is redacted, so two files differing only in their
@@ -400,7 +483,7 @@ def _apply(record: AgentConfig, incoming: dict[str, Any], now: datetime) -> str:
     record.removed_at = None
 
     if not changed and not was_removed:
-        return "unchanged"
+        return "unchanged", False
 
     record.sha256 = incoming["sha256"]
     record.size_bytes = incoming["size_bytes"]
@@ -410,7 +493,7 @@ def _apply(record: AgentConfig, incoming: dict[str, Any], now: datetime) -> str:
     if changed:
         record.revision += 1
         record.changed_at = now
-    return "updated"
+    return "updated", changed
 
 
 def _sync_sync(
@@ -449,9 +532,16 @@ def _sync_sync(
                     changed_at=now,
                 )
                 session.add(record)
+                session.flush()
+                _record_revision(session, record, now)
                 outcome = "stored"
             else:
-                outcome = _apply(record, values, now)
+                outcome, changed = _apply(record, values, now)
+                # Only on a real content change. "updated" also covers a file that
+                # merely came back from `removed` with identical content, and
+                # snapshotting that would fill the history with duplicate rows.
+                if changed:
+                    _record_revision(session, record, now)
             outcomes.append(
                 {
                     "path": values["path"],
@@ -539,6 +629,13 @@ def _delete_sync(identifier: str) -> AgentConfig | None:
         record = session.get(AgentConfig, identifier)
         if record is None:
             return None
+        # Explicit, not left to the FK: the cascade is real on PostgreSQL but
+        # silent on SQLite unless `PRAGMA foreign_keys` is on, which this app does
+        # not set — so a test would pass while production and tests disagreed.
+        for row in session.scalars(
+            select(AgentConfigRevision).where(AgentConfigRevision.config_id == identifier)
+        ):
+            session.delete(row)
         session.delete(record)
         # Flush BEFORE expunging, and the order is load-bearing: `expunge` evicts
         # the instance from the session, which discards the pending delete along
@@ -606,6 +703,33 @@ def _inventory_sync() -> list[dict[str, Any]]:
     ]
 
 
+def _revisions_sync(config_id: str) -> list[AgentConfigRevision]:
+    with session_scope() as session:
+        rows = list(
+            session.scalars(
+                select(AgentConfigRevision)
+                .where(AgentConfigRevision.config_id == config_id)
+                .order_by(AgentConfigRevision.revision.desc())
+            )
+        )
+        for row in rows:
+            session.expunge(row)
+        return rows
+
+
+def _revision_sync(config_id: str, revision: int) -> AgentConfigRevision | None:
+    with session_scope() as session:
+        row = session.scalars(
+            select(AgentConfigRevision).where(
+                AgentConfigRevision.config_id == config_id,
+                AgentConfigRevision.revision == revision,
+            )
+        ).one_or_none()
+        if row is not None:
+            session.expunge(row)
+        return row
+
+
 # --- async wrappers ---------------------------------------------------------
 
 
@@ -643,6 +767,57 @@ async def remove(identifier: str) -> dict[str, Any] | None:
     return {"config_id": record.id, "path": record.path, "branch": branch_label(
         record.machine, record.scope_kind, record.project, record.tool
     )}
+
+
+async def revisions(config_id: str) -> list[AgentConfigRevision]:
+    return await anyio.to_thread.run_sync(_revisions_sync, config_id)
+
+
+async def revision(config_id: str, number: int) -> AgentConfigRevision | None:
+    return await anyio.to_thread.run_sync(_revision_sync, config_id, number)
+
+
+def revision_to_dict(row: AgentConfigRevision, *, include_content: bool = False) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "config_id": row.config_id,
+        "revision": row.revision,
+        "sha256": row.sha256,
+        "size_bytes": row.size_bytes,
+        "content_kind": str(row.content_kind),
+        "redactions": row.redactions,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "replaced_at": row.replaced_at.isoformat() if row.replaced_at else None,
+        "current": row.replaced_at is None,
+        **restorability(row.content_kind, row.redactions),
+    }
+    if include_content:
+        payload["content"] = row.content
+    return payload
+
+
+def restorability(content_kind: Any, redactions: int) -> dict[str, Any]:
+    """Whether this content can be written back to a machine, and why not.
+
+    The single most important field on the pull path. A `settings.json` restored
+    with `«redacted»` where an API key was looks correct and does not work, and a
+    restore that silently produces one is worse than no restore at all — so the
+    refusal is data, computed once here, rather than a rule each client is trusted
+    to reimplement.
+    """
+    kind = str(content_kind)
+    if kind == "binary":
+        return {"restorable": False, "reason": "not UTF-8; no content was ever stored"}
+    if kind == "too_large":
+        return {"restorable": False, "reason": "over the per-file cap; no content was stored"}
+    if redactions:
+        return {
+            "restorable": False,
+            "reason": (
+                f"{redactions} value(s) were masked before storage; writing this back would "
+                "produce a file that looks right and does not work"
+            ),
+        }
+    return {"restorable": True, "reason": None}
 
 
 # --- the sync itself --------------------------------------------------------
@@ -755,6 +930,60 @@ async def sync(
         "redactions": sum(int(v["redactions"]) for v in prepared),
         "pruned": prune,
         "files": outcomes + skipped,
+    }
+
+
+async def pull(branch: Branch, *, include_removed: bool = False) -> dict[str, Any]:
+    """Everything needed to write one branch back onto a machine.
+
+    On demand and never otherwise: nothing in this stack pushes configuration to a
+    machine, and this endpoint only answers a question a machine asked. It returns
+    content, so it is the one read path here that could overwrite somebody's work
+    if a client used it carelessly — which is why every entry carries `restorable`
+    and its reason, and why files that were masked come back marked rather than
+    quietly wrong.
+
+    Removed files are excluded by default. Restoring one resurrects something
+    somebody deleted, and that has to be asked for.
+    """
+    rows, _ = await listing(
+        machine=branch.machine,
+        scope_kind=branch.scope_kind,
+        project=branch.project,
+        tool=branch.tool,
+        limit=1000,
+    )
+
+    files: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for row in rows:
+        entry = {
+            **to_dict(row, include_content=True),
+            **restorability(row.content_kind, row.redactions),
+        }
+        if str(row.status) == "removed" and not include_removed:
+            skipped.append(
+                {
+                    "path": row.path,
+                    "reason": "removed from the machine; pass include_removed=1 to restore it",
+                }
+            )
+            continue
+        files.append(entry)
+
+    restorable = [f for f in files if f["restorable"]]
+    return {
+        "branch": branch.label,
+        "machine": branch.machine,
+        "scope": branch.scope_kind,
+        "project": branch.project,
+        "tool": branch.tool,
+        "files": files,
+        "restorable": len(restorable),
+        # Named separately rather than left to be counted: "8 files" and "7 of them
+        # can actually be written" are different answers to the same question.
+        "not_restorable": len(files) - len(restorable),
+        "excluded": skipped,
     }
 
 

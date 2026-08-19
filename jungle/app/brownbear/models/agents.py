@@ -20,6 +20,7 @@ from datetime import datetime
 from sqlalchemy import (
     DateTime,
     Enum,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -125,4 +126,61 @@ class AgentConfig(Base):
         Index("ix_agent_configs_branch", "machine", "scope_kind", "project", "tool"),
         # Staleness: "which machines have stopped reporting" is a range scan.
         Index("ix_agent_configs_synced", "last_synced_at"),
+    )
+
+
+class AgentConfigRevision(Base):
+    """One past content of one configuration file (spec 010).
+
+    `agent_configs` holds what a machine has *now*; this holds what it had before.
+    That is the difference between a visible copy and a backup, and it is the whole
+    reason this table exists — spec 008 shipped without it deliberately, and the
+    first question asked of the result was how to get an earlier version back.
+
+    A row is written only when the content actually changes. Re-syncing an
+    unchanged directory writes nothing here, so the table grows with edits rather
+    than with syncs — which matters when a machine syncs on every session and edits
+    its settings twice a year.
+
+    **The content stored here is redacted, exactly as in `agent_configs`.** A
+    revision is therefore restorable only when nothing was masked in it, and the
+    pull path says so per file rather than handing back a file that looks right and
+    does not work.
+    """
+
+    __tablename__ = "agent_config_revisions"
+
+    #: r_<sha256(config_id\0revision)[:32]> — the Key Based layer's rule again, so
+    #: re-writing the same revision is an upsert rather than a duplicate.
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    #: CASCADE at the database as well as an explicit delete in the service: a
+    #: revision whose file is gone is unreachable by every read path here, and
+    #: unreachable rows that still consume disk are how a table becomes a mystery.
+    config_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("agent_configs.id", ondelete="CASCADE"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_kind: Mapped[ConfigContentKind] = mapped_column(
+        Enum(ConfigContentKind, name="agent_content_kind", native_enum=True),
+        nullable=False,
+        default=ConfigContentKind.text,
+    )
+    redactions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: When a newer revision superseded this one. Null means it is the current
+    #: content — the same fact `agent_configs.revision` carries, kept here too so a
+    #: history query needs no join to know where it ends.
+    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("config_id", "revision", name="uq_agent_config_revisions"),
+        # Every read is "this file's history, newest first".
+        Index("ix_agent_config_revisions_file", "config_id", "revision"),
     )

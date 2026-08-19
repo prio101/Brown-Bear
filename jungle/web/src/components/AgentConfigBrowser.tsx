@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { relativeAge } from "@/lib/api/freshness";
-import type { AgentConfig, AgentInventory } from "@/lib/api/schemas";
+import type { AgentConfig, AgentInventory, AgentRevision } from "@/lib/api/schemas";
 import { bytes as formatBytes, count } from "@/lib/format";
 
 import { ProvenanceBadge } from "./ProvenanceBadge";
@@ -90,6 +90,11 @@ export function AgentConfigBrowser({
   const [detail, setDetail] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [history, setHistory] = useState<AgentRevision[]>([]);
+  const [kept, setKept] = useState(0);
+  /** A past revision the reader has opened. Null means the current content —
+   * which must be the default, or the page shows history as though it were now. */
+  const [viewing, setViewing] = useState<AgentRevision | null>(null);
 
   const machine = useMemo(
     () => inventory.machines.find((m) => m.machine === selection?.machine) ?? null,
@@ -137,6 +142,49 @@ export function AgentConfigBrowser({
       void loadBranch(next);
     },
     [loadBranch],
+  );
+
+  useEffect(() => {
+    setViewing(null);
+    setHistory([]);
+    if (!selectedId) return;
+    let cancelled = false;
+    fetch(`/ext/agents/files/${encodeURIComponent(selectedId)}/revisions`, {
+      headers: { accept: "application/json" },
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { revisions?: AgentRevision[]; kept?: number } | null) => {
+        if (cancelled || !body) return;
+        setHistory(body.revisions ?? []);
+        setKept(body.kept ?? 0);
+      })
+      // History is an extra, not the point of the page: a failure here must not
+      // take the content pane with it.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  const openRevision = useCallback(
+    async (row: AgentRevision) => {
+      if (row.current) {
+        setViewing(null);
+        return;
+      }
+      try {
+        const response = await fetch(
+          `/ext/agents/files/${encodeURIComponent(row.config_id)}/revisions/${row.revision}`,
+          { headers: { accept: "application/json" }, cache: "no-store" },
+        );
+        if (!response.ok) throw new Error(`the gateway returned ${response.status}`);
+        setViewing((await response.json()) as AgentRevision);
+      } catch {
+        setViewing(null);
+      }
+    },
+    [],
   );
 
   useEffect(() => {
@@ -376,8 +424,78 @@ export function AgentConfigBrowser({
                 </p>
               ) : null}
 
+              {history.length > 0 ? (
+                <div>
+                  <span className="bb-graph-detail-kind">
+                    History — {history.length} of the last {kept} kept
+                  </span>
+                  <ul className="bb-revisions" aria-label="Revision history">
+                    {history.map((row) => {
+                      const open = viewing?.revision === row.revision;
+                      const isCurrent = row.current && viewing === null;
+                      return (
+                        <li key={row.revision}>
+                          <button
+                            type="button"
+                            className="bb-interactive bb-revision"
+                            data-active={open || isCurrent ? "true" : undefined}
+                            onClick={() => void openRevision(row)}
+                          >
+                            <span className="bb-body-small">
+                              rev {row.revision}
+                              {row.current ? " · current" : ""}
+                            </span>
+                            <span className="bb-body-small bb-file-meta">
+                              {formatBytes(row.size_bytes)}
+                              {row.redactions > 0 ? ` · ${row.redactions} masked` : ""} ·{" "}
+                              {row.created_at ? (
+                                <RelativeTime
+                                  iso={row.created_at}
+                                  initial={relativeAge(new Date(row.created_at))}
+                                />
+                              ) : (
+                                "unknown age"
+                              )}
+                            </span>
+                            {/* The restore verdict comes from the server, which owns
+                                the masking rules. Shown here so a reader knows before
+                                trying, not after. */}
+                            <span className="bb-body-small bb-file-meta">
+                              {row.restorable ? "can be restored" : "cannot be restored"}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
               <div>
-                <span className="bb-graph-detail-kind">Stored content</span>
+                <span className="bb-graph-detail-kind">
+                  {viewing ? `Revision ${viewing.revision} (not current)` : "Stored content"}
+                </span>
+                {viewing ? (
+                  <p className="bb-body-small bb-graph-note" style={{ margin: "4px 0" }}>
+                    This is what the file held at revision {viewing.revision}, superseded{" "}
+                    {viewing.replaced_at ? (
+                      <RelativeTime
+                        iso={viewing.replaced_at}
+                        initial={relativeAge(new Date(viewing.replaced_at))}
+                      />
+                    ) : (
+                      "later"
+                    )}
+                    . It is not what the machine is running.{" "}
+                    <button
+                      type="button"
+                      className="bb-graph-link"
+                      onClick={() => setViewing(null)}
+                    >
+                      Show the current content
+                    </button>
+                  </p>
+                ) : null}
                 {selected.redactions > 0 ? (
                   <p className="bb-body-small bb-graph-note" style={{ margin: "4px 0" }}>
                     {selected.redactions} value{selected.redactions === 1 ? "" : "s"} replaced
@@ -397,6 +515,8 @@ export function AgentConfigBrowser({
                     <span className="bb-title-medium">{selected.content_kind}</span>
                     <span className="bb-body-small">{KIND_COPY[selected.content_kind]}</span>
                   </div>
+                ) : viewing ? (
+                  <pre className="bb-file-extraction">{viewing.content}</pre>
                 ) : selected.content ? (
                   <pre className="bb-file-extraction">{selected.content}</pre>
                 ) : (

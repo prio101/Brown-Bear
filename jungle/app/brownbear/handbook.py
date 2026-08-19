@@ -282,6 +282,109 @@ LAYERS: tuple[Layer, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class AdjacentStore:
+    """A store this stack keeps that is deliberately NOT a memory layer.
+
+    It gets its own record rather than a fifth `Layer` because the whole point of
+    it is the negative: it is never consulted by `/ext/context`, so numbering it
+    beside the four would state the opposite of what is true. The fields it does
+    share with a layer are the ones a caller needs in order to decide trust.
+    """
+
+    key: str
+    name: str
+    store: str
+    module: str
+    purpose: str
+    keyed_by: str
+    scope: str
+    returns: str
+    never: str
+    on_failure: str
+    #: The routes that actually read it. A caller who wants this data has to ask
+    #: for it by name; nothing carries it into a context response.
+    read_via: tuple[str, ...]
+    declared_defaults: dict[str, Any] = field(default_factory=dict)
+    notes: tuple[str, ...] = ()
+
+
+ADJACENT_STORES: tuple[AdjacentStore, ...] = (
+    AdjacentStore(
+        key="agent_configs",
+        name="Agent Configuration Store",
+        store="PostgreSQL — `agent_configs`",
+        module="brownbear/agents.py",
+        purpose=(
+            "Record what tool configuration each machine is running, so that two "
+            "machines behaving differently against this same stack can be compared. "
+            "It answers 'what is that machine set up to do', which no memory layer "
+            "can answer and which nothing else here records."
+        ),
+        keyed_by=(
+            "a_<sha256(machine\\0scope\\0project\\0tool\\0path)[:32]> — the ADDRESS, "
+            "not the content, unlike every other id in this stack. Re-syncing an "
+            "unchanged file touches its sync time; changed content bumps its revision "
+            "and keeps the same row, so a file has a history rather than a duplicate."
+        ),
+        scope=(
+            "machine → Global (the machine-wide directory) or a project → tool. Four "
+            "columns rather than one joined path, so a project literally named "
+            "'global' cannot collide with the global scope. Project names normalise "
+            "exactly as they do everywhere else, so Brown-Bear and brownbear are one "
+            "project here too."
+        ),
+        returns=(
+            "Redacted configuration text, and only to a caller that asks for it by "
+            "address at /ext/agents. Never an answer, never a chunk."
+        ),
+        never=(
+            "Take part in a lookup. Nothing here is embedded, so no sync can change "
+            "what /ext/context returns — a machine that syncs its configuration has "
+            "not taught this stack anything. It also never stores the text as it "
+            "arrived: values that look like credentials are masked before the row is "
+            "written, so the pre-redaction content exists nowhere for any endpoint to "
+            "return."
+        ),
+        on_failure=(
+            "Nothing in the request path depends on it. A failed sync leaves the "
+            "previous snapshot in place; an unreachable database fails the sync "
+            "itself and no lookup, hit rate or answer changes."
+        ),
+        read_via=(
+            "GET /ext/agents",
+            "GET /ext/agents/files",
+            "GET /ext/agents/files/{config_id}",
+        ),
+        declared_defaults={
+            "config_stale_hours": 24,
+            "max_config_file_bytes": 262144,
+            "tools": "claude, qwen",
+        },
+        notes=(
+            "REPORTED, NEVER VERIFIED — the same posture as extracted text and token "
+            "counts. A machine describes its own configuration and this stack cannot "
+            "check the description against the machine. What is recorded is when it "
+            "was said and by whom, which is why every branch carries the age of its "
+            "sync and anything older than config_stale_hours reads as stale.",
+            "Redaction happens twice and only the second time counts: the client "
+            "masks what it recognises, then the server masks again before writing. "
+            "The count beside a file is taken over the STORED text, so it covers "
+            "both — a server-only count reported 0 for files that were already full "
+            "of masks, which read as 'nothing was hidden here' about exactly the "
+            "files where something was.",
+            "Files whose only content is a credential — .credentials.json, .env, "
+            "*.pem — are refused rather than masked, and session data (transcripts, "
+            "history, todos) is never sent: it is conversation, not configuration.",
+            "A sync with prune marks files absent from the snapshot as removed and "
+            "keeps their last content, because a file that disappeared from a machine "
+            "is information. DELETE /ext/agents/files/{config_id} is the only way to "
+            "forget one, and it has to be asked for on purpose.",
+        ),
+    ),
+)
+
+
 def ordered() -> tuple[Layer, ...]:
     """Layers in numbered order, which is NOT the order they are consulted in.
 
@@ -435,6 +538,10 @@ GUARANTEES: tuple[str, ...] = (
     "Every layer degrades rather than fails. Redis down means recompute; Chroma "
     "unreachable means no context; the settings store unavailable means declared "
     "defaults. None of them block the caller's work.",
+    "Syncing a machine's configuration teaches this stack nothing. It is recorded, "
+    "not remembered: never embedded, never retrieved, never returned by "
+    "/ext/context. Ask /ext/agents for it by address — see 'Stored here, but not "
+    "memory' below.",
     "Nothing here calls a commercial model. Brown Bear stores, retrieves and meters; "
     "the API key never leaves the client, and the client is the only party that sees "
     "the model's response — which is why usage is reported to /ext/exchange rather "
@@ -463,12 +570,16 @@ def to_json() -> dict[str, Any]:
         "handbook_version": HANDBOOK_VERSION,
         "title": "Brown Bear — Memory Handbook",
         "summary": (
-            "Four memory layers, consulted in a fixed order. Read `lookup_order` "
-            "first: it is the part a caller cannot infer from a response."
+            "Four memory layers, consulted in a fixed order, plus one store that is "
+            "deliberately not one of them. Read `lookup_order` first: it is the part "
+            "a caller cannot infer from a response."
         ),
         "live_values_endpoint": "/ext/health",
         "values_are": "declared defaults — query live_values_endpoint for effective values",
         "layers": [asdict(layer) for layer in ordered()],
+        # Beside the layers rather than among them: a program reading this must be
+        # able to tell what is consulted from what is merely kept.
+        "adjacent_stores": [asdict(store) for store in ADJACENT_STORES],
         "lookup_order": [asdict(step) for step in LOOKUP_ORDER],
         "controls": [asdict(knob) for knob in KNOBS],
         "guarantees": list(GUARANTEES),
@@ -492,8 +603,9 @@ def to_markdown() -> str:
         "# Brown Bear — Memory Handbook",
         "",
         f"Handbook version {HANDBOOK_VERSION}. Four memory layers, consulted in a fixed",
-        "order. Every value below is a **declared default** — query `GET /ext/health`",
-        "for what this instance is actually running.",
+        "order, plus one store that is deliberately not one of them. Every value below",
+        "is a **declared default** — query `GET /ext/health` for what this instance is",
+        "actually running.",
         "",
         "## Read this first — the order of consultation",
         "",
@@ -553,6 +665,46 @@ def to_markdown() -> str:
         if layer.notes:
             out += ["Notes:", ""]
             out += [f"- {note}" for note in layer.notes]
+            out.append("")
+
+    out += ["## Stored here, but not memory", ""]
+    out += [
+        "These stores exist beside the four layers and are never consulted by",
+        "`/ext/context`. They are listed because the mistake they invite is a costly",
+        "one: writing to one of them and then expecting a lookup to know about it.",
+        "",
+    ]
+    for store in ADJACENT_STORES:
+        out += [
+            f"### {store.name}",
+            "",
+            f"*{store.store} — `{store.module}`*",
+            "",
+            f"**Purpose.** {store.purpose}",
+            "",
+            f"**Keyed by.** {store.keyed_by}",
+            "",
+            f"**Scope.** {store.scope}",
+            "",
+            f"**Returns.** {store.returns}",
+            "",
+            f"**Never.** {store.never}",
+            "",
+            f"**On failure.** {store.on_failure}",
+            "",
+            "**Read it with.** " + ", ".join(f"`{route}`" for route in store.read_via),
+            "",
+        ]
+        if store.declared_defaults:
+            out += ["Declared defaults:", ""]
+            out += _table(
+                ("Setting", "Default"),
+                [(f"`{k}`", f"`{v}`") for k, v in store.declared_defaults.items()],
+            )
+            out.append("")
+        if store.notes:
+            out += ["Notes:", ""]
+            out += [f"- {note}" for note in store.notes]
             out.append("")
 
     out += ["## What you can control", ""]

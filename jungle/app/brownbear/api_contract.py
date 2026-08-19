@@ -296,9 +296,10 @@ CONTRACT: tuple[Endpoint, ...] = (
     ),
     Endpoint(
         "GET", "/api-doc/v1/handbook", Reach.AUTHENTICATED, "Documentation",
-        "The memory handbook: the four layers, the order they are consulted in, and "
-        "what each will and will not return. Answers what the endpoint list cannot — "
-        "which store produced a result.",
+        "The memory handbook: the four layers, the order they are consulted in, what "
+        "each will and will not return, and the stores that are kept beside them and "
+        "never consulted — agent configuration among them. Answers what the endpoint "
+        "list cannot: which store produced a result, and which could not have.",
     ),
     Endpoint(
         "GET", "/api-doc/v1/handbook.md", Reach.AUTHENTICATED, "Documentation",
@@ -307,8 +308,8 @@ CONTRACT: tuple[Endpoint, ...] = (
     ),
     Endpoint(
         "GET", "/api-doc/v1/handbook.json", Reach.AUTHENTICATED, "Documentation",
-        "The handbook structured for a program: layers, lookup order, controls and "
-        "guarantees as fields rather than prose.",
+        "The handbook structured for a program: layers, adjacent_stores, lookup "
+        "order, controls and guarantees as fields rather than prose.",
     ),
 )
 

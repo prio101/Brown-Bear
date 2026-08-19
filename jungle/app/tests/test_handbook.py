@@ -116,6 +116,46 @@ class TestDeclaredValuesTrackTheCode:
         assert "declared defaults" in payload["values_are"]
 
 
+class TestAdjacentStores:
+    """The store that is documented for what it does NOT do.
+
+    An agent configuration sync writes to a table no lookup reads, so the failure
+    this guards against is a handbook that describes it as though it were a fifth
+    layer — a reader who then expects /ext/context to know what they synced.
+    """
+
+    def test_agent_configuration_is_declared_and_is_not_a_layer(self):
+        keys = {store.key for store in handbook.ADJACENT_STORES}
+        assert "agent_configs" in keys
+        assert keys.isdisjoint({layer.key for layer in handbook.LAYERS})
+
+    def test_no_adjacent_store_appears_in_the_lookup_order(self):
+        consulted = {step.layer for step in handbook.LOOKUP_ORDER}
+        for store in handbook.ADJACENT_STORES:
+            assert store.key not in consulted, store.key
+
+    def test_each_one_says_how_to_read_it(self):
+        # The whole contract of a store nothing carries into a response: a caller
+        # has to be told which route to ask.
+        for store in handbook.ADJACENT_STORES:
+            assert store.read_via, store.key
+            for route in store.read_via:
+                assert route.startswith("GET /"), route
+
+    def test_each_one_states_what_it_never_does(self):
+        for store in handbook.ADJACENT_STORES:
+            assert store.never.strip(), store.key
+            assert store.on_failure.strip(), store.key
+
+    def test_the_declared_stale_window_matches_the_app(self):
+        from brownbear.config import get_settings
+
+        store = next(s for s in handbook.ADJACENT_STORES if s.key == "agent_configs")
+        settings = get_settings()
+        assert store.declared_defaults["config_stale_hours"] == settings.config_stale_hours
+        assert store.declared_defaults["max_config_file_bytes"] == settings.max_config_file_bytes
+
+
 class TestRenderings:
     def test_all_three_are_served(self, client):
         for path, content_type in (
@@ -132,6 +172,13 @@ class TestRenderings:
         for layer in handbook.LAYERS:
             assert layer.name in body, layer.name
 
+    def test_markdown_names_every_adjacent_store_and_its_routes(self, client):
+        body = client.get("/api-doc/v1/handbook.md").text
+        for store in handbook.ADJACENT_STORES:
+            assert store.name in body, store.name
+            for route in store.read_via:
+                assert route in body, route
+
     def test_json_carries_the_whole_structure(self, client):
         payload = client.get("/api-doc/v1/handbook.json").json()
 
@@ -139,6 +186,7 @@ class TestRenderings:
         assert len(payload["layers"]) == len(handbook.LAYERS)
         assert len(payload["lookup_order"]) == len(handbook.LOOKUP_ORDER)
         assert len(payload["controls"]) == len(handbook.KNOBS)
+        assert len(payload["adjacent_stores"]) == len(handbook.ADJACENT_STORES)
         assert payload["guarantees"]
         # The fields a consumer actually branches on.
         first = payload["layers"][0]

@@ -147,6 +147,21 @@ class TestAdjacentStores:
             assert store.never.strip(), store.key
             assert store.on_failure.strip(), store.key
 
+    def test_the_read_paths_include_pulling_and_history(self):
+        """Spec 010 added both. A store nothing carries into a response is only as
+        useful as its list of routes, so a new read path that is not listed here is
+        a feature a caller cannot find."""
+        store = next(s for s in handbook.ADJACENT_STORES if s.key == "agent_configs")
+        assert "GET /ext/agents/pull" in store.read_via
+        assert any("/revisions" in route for route in store.read_via)
+
+    def test_only_one_guarantee_covers_the_config_store(self):
+        """Two guarantees said the same thing after spec 008 and spec 010 landed in
+        separate passes. A reader who meets the same promise twice has to work out
+        whether the second one is saying something new."""
+        mentions = [g for g in handbook.GUARANTEES if "/ext/agents" in g]
+        assert len(mentions) == 1, mentions
+
     def test_the_declared_stale_window_matches_the_app(self):
         from brownbear.config import get_settings
 
@@ -154,6 +169,7 @@ class TestAdjacentStores:
         settings = get_settings()
         assert store.declared_defaults["config_stale_hours"] == settings.config_stale_hours
         assert store.declared_defaults["max_config_file_bytes"] == settings.max_config_file_bytes
+        assert store.declared_defaults["config_revisions_kept"] == settings.config_revisions_kept
 
 
 class TestRenderings:

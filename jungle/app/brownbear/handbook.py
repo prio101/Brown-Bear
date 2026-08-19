@@ -26,7 +26,7 @@ from typing import Any
 #: Bumped when the *meaning* of a layer changes — a new store, a different order
 #: of consultation, a changed guarantee. Not bumped for wording. A client that
 #: caches this document keys on it.
-HANDBOOK_VERSION = "1.1"
+HANDBOOK_VERSION = "1.2"
 
 
 @dataclass(frozen=True)
@@ -144,6 +144,9 @@ LAYERS: tuple[Layer, ...] = (
             # meeting an `f_…` or `a_…` id needs to find it here, not by grepping.
             "file_prefix": "f_",
             "agent_config_prefix": "a_",
+            # Spec 010. History is addressed the same way the thing it is history of
+            # is: a retried sync must not leave two rows claiming to be revision 4.
+            "config_revision_prefix": "r_",
         },
         notes=(
             "This is the layer most often misread as a fast path. It is not one. Its "
@@ -274,6 +277,11 @@ LAYERS: tuple[Layer, ...] = (
             "verified without doing the extraction here, so the extractor and the "
             "reporting machine are recorded instead. Treat extracted text with the "
             "same scepticism as client-reported token counts.",
+            "A translated document is visible as one: the stored extraction is the "
+            "English text, then a headed `--- original (<language>), as read by "
+            "<extractor> ---` block, and the file is tagged lang-<language>, "
+            "src-<source language> and translated. Only the English half is embedded, "
+            "so one document answers once rather than twice at two different scores.",
             "Images are found by the words extracted from them, never by appearance. "
             "nomic-embed-text embeds text only, so a picture with no legible text and "
             "no caption is stored, downloadable and invisible to retrieval.",
@@ -325,7 +333,9 @@ ADJACENT_STORES: tuple[AdjacentStore, ...] = (
             "a_<sha256(machine\\0scope\\0project\\0tool\\0path)[:32]> — the ADDRESS, "
             "not the content, unlike every other id in this stack. Re-syncing an "
             "unchanged file touches its sync time; changed content bumps its revision "
-            "and keeps the same row, so a file has a history rather than a duplicate."
+            "and keeps the same row, so a file has a history rather than a duplicate. "
+            "Each past content is itself addressed, r_<sha256(config_id\\0revision)[:32]>, "
+            "so a retried sync cannot leave two rows claiming to be the same revision."
         ),
         scope=(
             "machine → Global (the machine-wide directory) or a project → tool. Four "
@@ -336,7 +346,10 @@ ADJACENT_STORES: tuple[AdjacentStore, ...] = (
         ),
         returns=(
             "Redacted configuration text, and only to a caller that asks for it by "
-            "address at /ext/agents. Never an answer, never a chunk."
+            "address at /ext/agents. Never an answer, never a chunk. GET /ext/agents/pull "
+            "is the one path that returns a whole branch's content at once, for a "
+            "machine restoring itself; every entry there carries `restorable` and, when "
+            "it is false, the reason."
         ),
         never=(
             "Take part in a lookup. Nothing here is embedded, so no sync can change "
@@ -355,10 +368,14 @@ ADJACENT_STORES: tuple[AdjacentStore, ...] = (
             "GET /ext/agents",
             "GET /ext/agents/files",
             "GET /ext/agents/files/{config_id}",
+            "GET /ext/agents/files/{config_id}/revisions",
+            "GET /ext/agents/files/{config_id}/revisions/{number}",
+            "GET /ext/agents/pull",
         ),
         declared_defaults={
             "config_stale_hours": 24,
             "max_config_file_bytes": 262144,
+            "config_revisions_kept": 10,
             "tools": "claude, qwen",
         },
         notes=(
@@ -380,6 +397,25 @@ ADJACENT_STORES: tuple[AdjacentStore, ...] = (
             "keeps their last content, because a file that disappeared from a machine "
             "is information. DELETE /ext/agents/files/{config_id} is the only way to "
             "forget one, and it has to be asked for on purpose.",
+            "HISTORY GROWS WITH EDITS, NOT WITH SYNCS (spec 010). A past content is "
+            "snapshotted only when the content actually changed, so a machine that "
+            "syncs on every session and edits its settings twice a year has two "
+            "revisions, not a thousand. Retention is capped at config_revisions_kept "
+            "and the oldest are deleted, so this is 'what did I change last week' and "
+            "not an archive. Deleting the file deletes its history with it.",
+            "PULLING IS ON DEMAND AND NOTHING IS EVER PUSHED. GET /ext/agents/pull "
+            "answers a question a machine asked; no route in this stack writes to a "
+            "machine, and the client that consumes it writes nothing without an "
+            "explicit --apply. Files marked removed are left out unless "
+            "include_removed is passed, because restoring one resurrects something "
+            "somebody deleted.",
+            "RESTORABLE IS A REFUSAL, NOT A WARNING. An entry comes back with "
+            "restorable: false for exactly three reasons — the content was not UTF-8, "
+            "it was over the per-file cap, or values in it were masked before storage "
+            "— and in all three no usable content exists to write. A masked "
+            "settings.json restored verbatim would look right and not work, so the "
+            "refusal is computed once on the server rather than left to each client "
+            "to reimplement from the masking rules.",
         ),
     ),
 )
@@ -538,10 +574,6 @@ GUARANTEES: tuple[str, ...] = (
     "Every layer degrades rather than fails. Redis down means recompute; Chroma "
     "unreachable means no context; the settings store unavailable means declared "
     "defaults. None of them block the caller's work.",
-    "Syncing a machine's configuration teaches this stack nothing. It is recorded, "
-    "not remembered: never embedded, never retrieved, never returned by "
-    "/ext/context. Ask /ext/agents for it by address — see 'Stored here, but not "
-    "memory' below.",
     "Nothing here calls a commercial model. Brown Bear stores, retrieves and meters; "
     "the API key never leaves the client, and the client is the only party that sees "
     "the model's response — which is why usage is reported to /ext/exchange rather "
@@ -551,7 +583,10 @@ GUARANTEES: tuple[str, ...] = (
     "above: it is never embedded, never chunked, never in either collection, and can "
     "never come back from /ext/context. A settings.json is not something anyone asked "
     "a question about, and putting it in `knowledge` would be noise that the "
-    "two-collection split cannot filter, because it would be inside one of them. "
+    "two-collection split cannot filter, because it would be inside one of them. It "
+    "is recorded, not remembered — ask /ext/agents for it by address, and see "
+    "'Stored here, but not memory' below for what that store does and does not "
+    "promise. "
     "Credential-shaped values in it are masked before the row is written — which is "
     "also why a stored configuration is only sometimes restorable: the last ten "
     "contents of each file are kept and can be pulled back on demand (spec 010), but "

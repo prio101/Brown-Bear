@@ -107,7 +107,9 @@ CONTRACT: tuple[Endpoint, ...] = (
     Endpoint(
         "POST", "/ext/agents/sync", Reach.AUTHENTICATED, "Agent configuration",
         "Sync one machine's tool configuration from a JSON snapshot: "
-        "`{machine, scope, project, tool, prune, files:[{path, content}]}`. Values "
+        "`{machine, scope, project, tool, prune, files:[{path, content}]}`. A file "
+        "whose content actually changed is snapshotted as a revision first, so the "
+        "history records edits rather than syncs. Values "
         "that look like credentials are masked here before the row is written, and "
         "the count is reported — the client's own redaction is not trusted. The "
         "count is of masks in the stored text, so it includes any the client "
@@ -138,14 +140,18 @@ CONTRACT: tuple[Endpoint, ...] = (
     Endpoint(
         "GET", "/ext/agents/pull", Reach.AUTHENTICATED, "Agent configuration",
         "Everything needed to write one branch back onto a machine — on demand, "
-        "never pushed. Every entry carries `restorable` and, when false, the reason: "
-        "a value that was masked before storage cannot be written back, because the "
-        "result would look right and not work.",
+        "never pushed. `machine` and `tool` are required; `scope` (project|global), "
+        "`project` and `include_removed` narrow it. Every entry carries `restorable` "
+        "and, when false, the reason: content that was binary, over the cap, or "
+        "masked before storage cannot be written back, because the result would look "
+        "right and not work. Files marked removed are excluded unless asked for — "
+        "restoring one resurrects something somebody deleted.",
     ),
     Endpoint(
         "GET", "/ext/agents/files/{config_id}/revisions", Reach.AUTHENTICATED, "Agent configuration",
         "A file's past contents, newest first, without the text. Written only when "
-        "the content changes, so the history grows with edits rather than syncs.",
+        "the content changes, so the history grows with edits rather than syncs, and "
+        "capped at `config_revisions_kept` — the response reports the cap as `kept`.",
     ),
     Endpoint(
         "GET", "/ext/agents/files/{config_id}/revisions/{number}", Reach.AUTHENTICATED,

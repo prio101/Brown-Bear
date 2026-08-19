@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from brownbear.aggregation import bucket_bounds, catch_up
+from brownbear.config import get_settings
 from brownbear.db import get_db
 from brownbear.models.aggregation import AggregationRun
 from brownbear.models.tokens import PeriodType, TokenEvent, TokenPeriod, TokenSource
@@ -96,6 +97,16 @@ def summary(
         ).where(TokenEvent.timestamp >= start, TokenEvent.timestamp < end)
     ).one()
 
+    # Deliberately NOT scoped to the window (BB-205). The window's own total says
+    # what happened today; this says when anything last arrived, which is the only
+    # thing that separates a quiet day from reporting that died on Tuesday. The
+    # hooks fail open and silent, so without it a zero is unreadable.
+    latest = db.execute(
+        select(TokenEvent.timestamp, TokenEvent.source)
+        .order_by(TokenEvent.timestamp.desc())
+        .limit(1)
+    ).first()
+
     return {
         "period": period.value,
         "period_start": start.isoformat(),
@@ -103,6 +114,13 @@ def summary(
         # Flags that this window is still open, so the number will keep moving.
         "live": True,
         "source": "token_events",
+        # Null means nothing has EVER been reported, which is a different state
+        # from stale and reads differently to a person.
+        "last_event_at": latest.timestamp.isoformat() if latest else None,
+        "last_event_source": latest.source.value if latest else None,
+        # Reported so the page and the app cannot disagree about what stale means,
+        # the way the agent inventory reports its own window.
+        "stale_after_hours": get_settings().usage_stale_hours,
         "tokens_in": int(row.tokens_in),
         "tokens_out": int(row.tokens_out),
         "total_tokens": int(row.total_tokens),

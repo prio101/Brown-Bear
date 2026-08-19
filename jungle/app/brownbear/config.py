@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     # current. A sync is a deliberate client action, so silence is expected — and
     # silence must never be rendered as an up-to-date configuration.
     config_stale_hours: int = 24
+    # After this, "no usage reported" is shown as possibly-broken rather than as
+    # a quiet day (BB-205). The client hooks fail open and silent, so an empty
+    # token page is ambiguous by construction and something has to resolve it.
+    # Longer than the config window on purpose: a machine syncs its configuration
+    # on a schedule, but nobody owes this stack a prompt.
+    usage_stale_hours: int = 24
     # How many past contents of one configuration file to keep (spec 010). Bounded
     # deliberately: after blobs, an unbounded history is the second thing in this
     # stack that would grow forever with nothing pruning it. Ten covers "what did I

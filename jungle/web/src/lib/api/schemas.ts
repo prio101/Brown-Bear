@@ -145,6 +145,14 @@ export const TokenSummarySchema = z.object({
   cost: z.number(),
   currency: z.string(),
   request_count: z.number(),
+  // BB-205. Not scoped to the window: today's total says what happened today,
+  // these say whether anything is still arriving at all. Null means nothing ever
+  // has, which is a different state from stale.
+  last_event_at: Timestamp.nullable(),
+  last_event_source: z.string().nullable(),
+  // The server's own threshold, so the page cannot hold a private opinion about
+  // what stale means.
+  stale_after_hours: z.number(),
 });
 
 export const TokenHistorySchema = z.object({

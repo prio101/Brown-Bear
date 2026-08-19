@@ -1,4 +1,5 @@
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { LivenessBanner } from "@/components/LivenessBanner";
 import { BarChart } from "@/components/charts/BarChart";
 import { ChartFrame, ChartTable } from "@/components/charts/ChartFrame";
 import { LineChart } from "@/components/charts/LineChart";
@@ -19,6 +20,7 @@ import {
 } from "@/lib/api/endpoints";
 import { all, toPanelState } from "@/lib/api/panel";
 import { provenanceOf, weakestProvenance, type Provenance } from "@/lib/api/provenance";
+import { reportingHealth } from "@/lib/api/reporting";
 import { count, money } from "@/lib/format";
 
 /**
@@ -104,6 +106,11 @@ export default async function Tokens({
     : [];
   const totalsProvenance: Provenance = weakestProvenance(presentSources);
 
+  // BB-205: whether anything is still arriving, which the totals cannot say. A
+  // page of zeroes renders identically whether nobody worked today or every
+  // report has been rejected since yesterday.
+  const reporting = summary.ok ? reportingHealth(summary.data) : null;
+
   const aggregationState = toPanelState(
     aggregation,
     (data) => data.recent_runs.length === 0,
@@ -125,6 +132,15 @@ export default async function Tokens({
           </Text>
           <AutoRefresh renderedAt={renderedAt} />
         </header>
+
+        {reporting ? (
+          <LivenessBanner
+            state={reporting.state}
+            affected={reporting.affected}
+            lastWorked={reporting.lastWorked}
+            nextStep={reporting.nextStep}
+          />
+        ) : null}
 
         {/* One filter row, above the charts, never interleaved. */}
         <PeriodFilter current={period} basePath="/tokens" />
@@ -155,6 +171,7 @@ export default async function Tokens({
               value={count(summary.data.total_tokens)}
               provenance={totalsProvenance}
               fetchedAt={summary.fetchedAt}
+              note={reporting?.note}
             />
             <StatTile
               label="Cost"
@@ -168,6 +185,7 @@ export default async function Tokens({
               value={count(summary.data.request_count)}
               provenance={totalsProvenance}
               fetchedAt={summary.fetchedAt}
+              note={reporting?.note}
             />
           </div>
         ) : null}

@@ -15,6 +15,7 @@ import {
   getTokensBySource,
 } from "@/lib/api/endpoints";
 import { staleness } from "@/lib/api/freshness";
+import { reportingHealth } from "@/lib/api/reporting";
 import { all, toPanelState } from "@/lib/api/panel";
 import { provenanceOf, weakestProvenance } from "@/lib/api/provenance";
 import { bytes, count, money, percent, rate } from "@/lib/format";
@@ -72,6 +73,14 @@ export default async function Overview() {
     }
   }
 
+  /* --- is usage still being reported? (BB-205) ---------------------------
+   * A second, independent signal. The collector above measures this host and was
+   * fresh throughout the incident that produced this code; what had stopped was
+   * arriving from another machine, and nothing on the page said so. */
+  const reporting = summary.ok
+    ? reportingHealth(summary.data)
+    : null;
+
   /* --- provenance of the token totals ------------------------------------
    * A total that adds a remote client's claim to a locally measured count is only
    * as good as the claim, so compute the weakest kind from the sources actually
@@ -118,6 +127,17 @@ export default async function Overview() {
           nextStep={nextStep}
         />
 
+        {/* Separate banner, not a merged one: the collector and the reporting
+            clients fail independently, and a reader has to know which. */}
+        {reporting ? (
+          <LivenessBanner
+            state={reporting.state}
+            affected={reporting.affected}
+            lastWorked={reporting.lastWorked}
+            nextStep={reporting.nextStep}
+          />
+        ) : null}
+
         <div
           style={{
             display: "grid",
@@ -133,11 +153,14 @@ export default async function Overview() {
                 value={count(summary.data.total_tokens)}
                 provenance={totalsProvenance}
                 fetchedAt={summary.fetchedAt}
-                note={
-                  mixesTrust
-                    ? "Mixes locally measured counts with remote client reports."
-                    : undefined
-                }
+                // The age of the last report goes on the number itself, not only
+                // in the banner: a zero has to be readable where it is read.
+                note={[
+                  reporting?.note,
+                  mixesTrust ? "Mixes locally measured counts with remote client reports." : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               />
               <StatTile
                 label="Cost today"

@@ -372,3 +372,65 @@ class TestAttachExtraction:
 
         assert response.status_code == 200
         assert response.json()["status"] == FileStatus.failed.value
+
+
+class TestPreviewHeaders:
+    """BB-204: what the browser is told about bytes it renders inline.
+
+    The failure this guards against is invisible from the server's side — the
+    response is a clean 200 and the browser shows an error page inside the frame —
+    so the policy string is asserted rather than trusted.
+    """
+
+    @pytest.fixture
+    def stored(self, monkeypatch, tmp_path):
+        """A file whose bytes are really on disk, so /preview streams them."""
+        from brownbear.blobs import BlobStore
+
+        store = BlobStore(tmp_path / "blobs")
+        monkeypatch.setattr(files_service, "blob_store", lambda: store)
+
+        def _install(payload: bytes, media_type: str):
+            written = store.write(iter([payload]), max_bytes=1_000_000, expected_sha256=None)
+            record = type(
+                "Row",
+                (),
+                {
+                    "id": "f_" + written.sha256[:32],
+                    "sha256": written.sha256,
+                    "filename": "sample",
+                    "media_type": media_type,
+                    "size_bytes": written.size_bytes,
+                    "preview_sha256": None,
+                },
+            )()
+            monkeypatch.setattr(files_service, "_get_sync", lambda i: record)
+            return record
+
+        return _install
+
+    def test_a_pdf_is_not_sandboxed(self, client, stored):
+        record = stored(b"%PDF-1.4\n%fake", "application/pdf")
+
+        response = client.get(f"/ext/files/{record.id}/preview")
+
+        assert response.status_code == 200
+        policy = response.headers["content-security-policy"]
+        # The whole bug: a browser renders a PDF with a scripted viewer of its own,
+        # and `sandbox` leaves it showing an error page instead of the document.
+        assert "sandbox" not in policy
+        assert "default-src 'none'" in policy
+        assert "object-src 'none'" in policy
+        # Framing is still restricted, by a header a browser does honour here.
+        assert "frame-ancestors 'self'" in policy
+        assert response.headers["x-frame-options"] == "SAMEORIGIN"
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    def test_an_image_keeps_the_strict_policy(self, client, stored):
+        record = stored(PNG, "image/png")
+
+        response = client.get(f"/ext/files/{record.id}/preview")
+
+        assert response.status_code == 200
+        # An image needs no viewer, so nothing here has to be relaxed for it.
+        assert "sandbox" in response.headers["content-security-policy"]

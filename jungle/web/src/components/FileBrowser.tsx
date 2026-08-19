@@ -9,9 +9,10 @@
  * poor retrieval and have no way to tell whether the scan was unreadable or the
  * embedding was at fault.
  *
- * Preview is the browser's job. Images go in an <img>, PDFs in a sandboxed
- * <iframe> — both rendered natively, so this ships no PDF library and the runtime
- * image needs no rendering dependency. `inline_renderable` comes from the server,
+ * Preview is the browser's job. Images go in an <img>, PDFs in an <iframe> the
+ * browser's own viewer fills — both rendered natively, so this ships no PDF library
+ * and the runtime image needs no rendering dependency. That frame is not sandboxed;
+ * see BB-204 and the comment on it below. `inline_renderable` comes from the server,
  * which decides it by sniffing the bytes; SVG is excluded there because it can
  * carry script, and inline from this origin that script would run with the
  * reader's session.
@@ -45,9 +46,15 @@ function Preview({ file }: { file: FileRecord }) {
   if (file.media_type === "application/pdf") {
     return (
       <iframe
-        // Sandboxed: a PDF can carry JavaScript. The browser's viewer isolates it
-        // anyway, and this makes sure nothing reaches the dashboard's origin.
-        sandbox=""
+        // Deliberately NOT sandboxed (BB-204). This frame carried `sandbox=""`, and
+        // Chrome answers a sandboxed PDF frame with its subframe error page rather
+        // than the document — measured across every token combination, including
+        // `allow-scripts allow-same-origin`, so there is no set that both sandboxes
+        // and renders. The isolation that mattered is still there and is the
+        // browser's own: a PDF's JavaScript runs in the viewer's engine, which has
+        // no DOM, no cookies and no reach into this page. The response carries
+        // `default-src 'none'; object-src 'none'`, `nosniff` and a byte-sniffed
+        // allowlist, so this route can never hand back HTML.
         src={source}
         title={`Preview of ${file.filename}`}
         className="bb-file-preview-frame"

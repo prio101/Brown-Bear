@@ -271,7 +271,7 @@ side rendering dependency at all:
 |---|---|---|---|
 | `text/plain`, `text/markdown`, JSON, CSV | The extracted text is the content — render it | none | none |
 | `image/png`, `image/jpeg`, `image/webp`, `image/gif` | `<img>` — native | serve inline with the **sniffed** type | none |
-| `application/pdf` | `<iframe sandbox>` — every current browser has a built-in viewer | serve inline **and** relax `X-Frame-Options` on this route only | none |
+| `application/pdf` | `<iframe>`, **not** sandboxed — see BB-204 | serve inline, relax `X-Frame-Options` on this route only, and leave `sandbox` out of its CSP | none |
 | `image/svg+xml` | **Rendered as text, never as an image** | — | none |
 | docx, xlsx, zip, anything else | Media-type placard + extracted text + download | none | none |
 
@@ -285,11 +285,20 @@ is also a document format: an `.svg` can carry `<script>`, and served inline fro
 this origin that script runs with the reader's session. It is previewed as source
 text, like any other text file.
 
-**PDFs can carry JavaScript too.** Browser viewers sandbox it, but the iframe gets
-`sandbox` and the response keeps `nosniff` plus
-`Content-Security-Policy: default-src 'none'; object-src 'none'; sandbox` — belt and
-braces, since this is the one route that renders untrusted bytes rather than
-downloading them.
+**PDFs can carry JavaScript too, and the sandbox that was meant to contain it does
+not work here (BB-204).** A browser renders a PDF with a built-in viewer that is
+itself a scripted document, and a sandbox is what that viewer cannot survive: Chrome
+answers a sandboxed PDF frame with its subframe error page instead of the document,
+under every combination of sandbox tokens. So the frame carries no `sandbox`
+attribute and the PDF response carries no `sandbox` directive; it gets
+`Content-Security-Policy: default-src 'none'; object-src 'none'; frame-ancestors 'self'`
+instead. Images — which need no viewer — keep the strict policy including `sandbox`.
+
+What contains a hostile PDF is the browser's own architecture: its JavaScript runs
+in the viewer's engine, with no DOM, no cookies and no reach into the page framing
+it. What this route still guarantees is that it never hands back something *other*
+than a PDF or an image — `nosniff`, plus a media type sniffed from the bytes against
+a five-type allowlist.
 
 Everything not on the inline allowlist keeps `Content-Disposition: attachment`.
 
@@ -328,7 +337,10 @@ Document it in `clients/claude-code/README.md` alongside the other two.
 - [ ] An uploaded `.html` file is never served as `text/html`.
 - [ ] An uploaded `.svg` renders as source text, never as an image.
 - [ ] A PNG and a PDF both preview inline in the browser; a `.docx` falls back to the
-      extracted-text pane and a download link.
+      extracted-text pane and a download link. Checked in Chrome, not only in a test:
+      the PDF failure mode (BB-204) is a clean 200 with an error page in the frame.
+- [ ] The PDF preview frame has **no** `sandbox` attribute and the PDF response has
+      **no** `sandbox` CSP directive — either one blocks the browser's viewer.
 - [ ] The preview route returns `X-Frame-Options: SAMEORIGIN` **and still returns**
       `X-Content-Type-Options: nosniff` and `Referrer-Policy` — proving the nginx
       `add_header` replacement trap was handled.

@@ -55,14 +55,16 @@ afterEach(() => {
 });
 
 describe("preview by media type", () => {
-  it("renders a PDF in a sandboxed iframe", () => {
-    // A PDF can carry JavaScript. The browser viewer isolates it; sandbox makes
-    // sure nothing reaches the dashboard's origin either.
+  it("renders a PDF in an iframe with no sandbox attribute", () => {
+    // BB-204: the frame must NOT be sandboxed. Chrome refuses to run its built-in
+    // PDF viewer in a sandboxed frame — under any token combination — and shows its
+    // subframe error page instead, so asserting a sandbox here would lock in a
+    // preview that never renders.
     render(<FileBrowser initial={[file({ media_type: "application/pdf", filename: "a.pdf", inline_renderable: true })]} />);
 
     const frame = document.querySelector("iframe");
     expect(frame).not.toBeNull();
-    expect(frame!.getAttribute("sandbox")).toBe("");
+    expect(frame!.hasAttribute("sandbox")).toBe(false);
     expect(frame!.getAttribute("src")).toBe("/ext/files/f_abc/preview");
   });
 

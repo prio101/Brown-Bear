@@ -36,9 +36,28 @@ CHUNK_BYTES = 1024 * 1024
 #: the safety-critical pair is repeated here rather than assumed.
 INLINE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
-    # The one route that renders untrusted bytes. A PDF can carry JavaScript; the
-    # browser viewer sandboxes it, and this makes sure nothing else is reachable.
+    # The one route that renders untrusted bytes. Nothing here may fetch anything.
     "Content-Security-Policy": "default-src 'none'; object-src 'none'; sandbox",
+}
+
+#: PDFs get the same policy minus `sandbox` (BB-204). A browser renders a PDF with a
+#: built-in viewer that is itself a scripted document, and a full sandbox is what
+#: that viewer cannot survive: Chrome answers a sandboxed PDF frame with its
+#: subframe error page instead of the document. Measured on Chrome 151 — no
+#: combination of sandbox tokens renders, so this is not a matter of granting
+#: `allow-scripts`, and the directive is dropped here so the same trap cannot be
+#: sprung again in header form by another browser's viewer.
+#:
+#: What is left still holds: `default-src 'none'` and `object-src 'none'` (both
+#: measured not to disturb the viewer), `frame-ancestors`, `nosniff`, and a
+#: byte-sniffed allowlist that never serves HTML from this route. A PDF's own
+#: JavaScript runs in the viewer's engine, which has no DOM, no cookies and no reach
+#: into the page framing it.
+PDF_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": (
+        "default-src 'none'; object-src 'none'; frame-ancestors 'self'"
+    ),
 }
 
 
@@ -279,15 +298,16 @@ async def preview(file_id: str, request: Request) -> Any:
     if not files_service.is_inline_renderable(media_type):
         raise HTTPException(status_code=404, detail="not an inline-renderable type")
 
+    base = PDF_HEADERS if media_type == "application/pdf" else INLINE_HEADERS
     return StreamingResponse(
         store.stream(digest),
         media_type=media_type,
         headers={
-            **INLINE_HEADERS,
+            **base,
             "Content-Disposition": "inline",
-            # SAMEORIGIN, not DENY: a PDF renders in a sandboxed iframe on the
-            # dashboard, and the edge's blanket DENY would block it. Still not
-            # ALLOWALL — nobody else may frame this.
+            # SAMEORIGIN, not DENY: a PDF renders in an iframe on the dashboard, and
+            # the edge's blanket DENY would block it. Still not ALLOWALL — nobody
+            # else may frame this.
             "X-Frame-Options": "SAMEORIGIN",
         },
     )

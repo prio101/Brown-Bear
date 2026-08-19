@@ -135,8 +135,8 @@ server {
     # than as a download, so it is the one route that needs its own headers.
     #
     # The server block sets `X-Frame-Options DENY`, which refuses framing even
-    # from the same origin — that would block the sandboxed <iframe> the PDF
-    # preview renders in. nginx `add_header` cannot be relaxed per-response, and
+    # from the same origin — that would block the <iframe> the PDF preview
+    # renders in. nginx `add_header` cannot be relaxed per-response, and
     # a DENY from here plus a SAMEORIGIN from the app would leave the browser
     # with two conflicting values and resolve to the stricter one. So this
     # location declares its own.

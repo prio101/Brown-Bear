@@ -158,6 +158,35 @@ class TestSchema:
         assert all("x-brownbear-reach" not in op for op in catchall.values())
 
 
+class TestRequiredHeaders:
+    """BB-205. A header whose absence is answered by Cloudflare — before the
+    request reaches this stack — cannot be discovered from behaviour: there is no
+    log line here, and the clients that hit it fail open. The doc is the only
+    place it can be learned, so its presence is asserted rather than assumed."""
+
+    def test_the_page_states_the_user_agent_requirement(self, client):
+        body = client.get("/api-doc/v1").text
+
+        assert "User-Agent" in body
+        # The exact string a reader will have in front of them when searching.
+        assert "error code: 1010" in body
+
+    def test_the_schema_carries_the_same_requirement(self, client):
+        payload = client.get("/api-doc/v1/openapi.json").json()
+
+        headers = {entry["header"] for entry in payload["x-brownbear-request-headers"]}
+        assert "User-Agent" in headers
+
+    def test_every_requirement_names_its_symptom_and_an_example(self):
+        from brownbear.api_contract import REQUIREMENTS
+
+        assert REQUIREMENTS
+        for requirement in REQUIREMENTS:
+            assert requirement.symptom.strip(), requirement.header
+            assert requirement.example.strip(), requirement.header
+            assert requirement.applies_to.strip(), requirement.header
+
+
 class TestInertness:
     def test_module_touches_no_backing_service(self):
         """The page must serve while the stack is degraded, so it cannot import a
@@ -169,7 +198,9 @@ class TestInertness:
             if line.startswith(("import ", "from ")) and "brownbear" in line
         ]
 
-        assert imports == ["from brownbear.api_contract import CONTRACT, Reach, by_group"]
+        assert imports == [
+            "from brownbear.api_contract import CONTRACT, REQUIREMENTS, Reach, by_group"
+        ]
 
     def test_contract_module_is_pure_data(self):
         source = open("brownbear/api_contract.py", encoding="utf-8").read()

@@ -571,6 +571,12 @@ GUARANTEES: tuple[str, ...] = (
     "something matched.",
     "Retrieval never runs on a hit, and a hit never comes from the knowledge corpus. "
     "The two collections exist separately to make that structural.",
+    "A request that never arrives looks exactly like a quiet day. The client hooks "
+    "fail open by design, and a call rejected before it reaches this stack — a "
+    "missing User-Agent is answered by Cloudflare with 403 error code 1010 — is "
+    "recorded nowhere on either side. Where a number can be zero because nothing "
+    "was sent, this stack now reports when it last heard anything: "
+    "GET /api/tokens/summary carries last_event_at beside the totals.",
     "Every layer degrades rather than fails. Redis down means recompute; Chroma "
     "unreachable means no context; the settings store unavailable means declared "
     "defaults. None of them block the caller's work.",
@@ -753,9 +759,17 @@ def to_markdown() -> str:
         "",
         "## Calling it",
         "",
+        "**Send a `User-Agent`.** Cloudflare answers a default library agent —",
+        "`python-urllib/3.x` and friends — with `403` and a body reading",
+        "`error code: 1010`, at its own edge, before the request reaches this stack.",
+        "Nothing is logged here and the token is never checked, so a client that",
+        "fails open records the failure nowhere at all (BB-205). curl sets one for",
+        "you; a script does not.",
+        "",
         "```bash",
         'curl -s -X POST "$BB_GATEWAY_URL/ext/context" \\',
         '  -H "Authorization: Bearer $BB_EDGE_TOKEN" \\',
+        '  -H "User-Agent: brown-bear-client/1.0" \\',
         '  -H "Content-Type: application/json" \\',
         '  -d \'{"prompt":"...","project":"brownbear","model":"claude-opus-5"}\'',
         "```",

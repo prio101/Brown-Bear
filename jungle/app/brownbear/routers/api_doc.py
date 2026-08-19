@@ -25,7 +25,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from brownbear.api_contract import CONTRACT, Reach, by_group
+from brownbear.api_contract import CONTRACT, REQUIREMENTS, Reach, by_group
 
 router = APIRouter(prefix="/api-doc/v1", tags=["api-doc"])
 
@@ -56,6 +56,19 @@ def annotated_schema(app_schema: dict[str, Any]) -> dict[str, Any]:
     """
     schema = dict(app_schema)
     schema["x-brownbear-contract-version"] = CONTRACT_VERSION
+    # Headers that decide whether a request is answered at all. On the schema for
+    # the same reason they are on the page: a client generated from the schema
+    # alone would omit them and fail in a way that looks like nothing (BB-205).
+    schema["x-brownbear-request-headers"] = [
+        {
+            "header": requirement.header,
+            "applies_to": requirement.applies_to,
+            "symptom": requirement.symptom,
+            "why": requirement.why,
+            "example": requirement.example,
+        }
+        for requirement in REQUIREMENTS
+    ]
     schema["x-brownbear-contract"] = [
         {
             "method": endpoint.method,
@@ -130,9 +143,19 @@ def _page() -> str:
         f"{counts[Reach.DENIED]} denied"
     )
 
+    requirements = "".join(
+        f"<p><strong>{html.escape(requirement.header)}</strong> — required on "
+        f"{html.escape(requirement.applies_to)}. Without it: "
+        f"<strong>{html.escape(requirement.symptom)}</strong>. "
+        f"{html.escape(requirement.why)}</p>"
+        f"<pre><code>{html.escape(requirement.example)}</code></pre>"
+        for requirement in REQUIREMENTS
+    )
+
     return _SHELL.format(
         version=CONTRACT_VERSION,
         summary=summary,
+        requirements=requirements,
         toc="".join(toc),
         content="".join(sections),
     )
@@ -255,6 +278,13 @@ a:focus-visible, nav a:focus-visible {{
       <p>Unauthenticated requests to a token-required route return <code>401</code>
       with a <code>WWW-Authenticate</code> header. Requests to an unlisted path return
       <code>403</code>.</p>
+    </div>
+    <div class="auth">
+      <p><strong>Required headers</strong> — these decide whether a request is
+      answered at all. The first one is answered before the request reaches this
+      stack, so a client that gets it wrong sees a failure with no trace on this
+      side and, if it fails open, no trace on its own side either.</p>
+      {requirements}
     </div>
   </header>
   <nav aria-label="Contents"><ul>{toc}</ul></nav>

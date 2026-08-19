@@ -38,6 +38,57 @@ class Endpoint:
     summary: str
 
 
+@dataclass(frozen=True)
+class Requirement:
+    """A header a caller must send, and what happens when it does not.
+
+    Declared beside the endpoint list because it is not a property of any one
+    endpoint: it decides whether a request is answered at all, and getting it
+    wrong produces a failure that looks like nothing rather than like an error.
+    """
+
+    header: str
+    applies_to: str
+    #: The exact response, so it can be recognised and searched for.
+    symptom: str
+    why: str
+    example: str
+
+
+#: Headers that decide whether a request is answered at all (BB-205).
+REQUIREMENTS: tuple[Requirement, ...] = (
+    Requirement(
+        header="User-Agent",
+        applies_to="every request through the tunnel",
+        symptom="403 with a body reading `error code: 1010`",
+        why=(
+            "Cloudflare's browser-integrity check refuses the default agents that "
+            "HTTP libraries send — `python-urllib/3.x` is the one that has bitten "
+            "this project twice. The refusal happens at the edge of Cloudflare's "
+            "network, so the request never reaches this stack: nothing is logged "
+            "here, the token is never checked, and a client that fails open "
+            "silently records nothing either. In BB-205 that cost eighteen hours "
+            "of usage reporting with no error visible anywhere. curl sets an agent "
+            "of its own, which is why a curl example works where a script does not."
+        ),
+        example='User-Agent: brown-bear-client/1.0',
+    ),
+    Requirement(
+        header="Content-Length",
+        applies_to="POST /ext/agents/sync",
+        symptom="411 when absent, 413 when over the cap",
+        why=(
+            "The body cap has to be applied before the body is buffered, and a JSON "
+            "document cannot be parsed incrementally without a streaming parser this "
+            "app has no other use for. So the declared length is required rather than "
+            "inferred. Every HTTP client in normal use sends it; a hand-rolled "
+            "chunked request does not."
+        ),
+        example="Content-Length: 20481",
+    ),
+)
+
+
 #: Order is presentation order within a group.
 CONTRACT: tuple[Endpoint, ...] = (
     # --- context gateway -----------------------------------------------------

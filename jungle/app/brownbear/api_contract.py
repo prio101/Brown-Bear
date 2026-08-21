@@ -138,7 +138,9 @@ CONTRACT: tuple[Endpoint, ...] = (
     Endpoint(
         "GET", "/ext/files/{file_id}/preview", Reach.AUTHENTICATED, "Context gateway",
         "Inline-renderable bytes: the client's thumbnail, or the original when it is "
-        "an image or a PDF. The only route served inline rather than as a download.",
+        "an image or a PDF. The only route served inline rather than as a download. "
+        "`?original=1` prefers the original over the thumbnail — what the dashboard's "
+        "magnifier and gallery need, since magnifying a thumbnail magnifies its blur.",
     ),
     Endpoint(
         "POST", "/ext/files/{file_id}/extraction", Reach.AUTHENTICATED, "Context gateway",

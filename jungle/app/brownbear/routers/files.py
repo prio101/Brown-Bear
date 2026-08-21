@@ -268,13 +268,23 @@ async def detail(file_id: str, download: bool = False) -> Any:
 
 
 @router.get("/{file_id}/preview")
-async def preview(file_id: str, request: Request) -> Any:
+async def preview(file_id: str, request: Request, original: bool = False) -> Any:
     """Inline-renderable bytes for the browser.
 
     Three sources, in order: the client-supplied thumbnail, then the original when
     it is an image or a PDF, then nothing. Only types on the allowlist are served
     inline; SVG is excluded deliberately — it can carry script, and inline from this
     origin that script runs with the reader's session.
+
+    `?original=1` reverses the first two (spec 011). The dashboard's magnifier and
+    gallery need the file's own pixels: a lens over a 240px thumbnail magnifies the
+    thumbnail's blur and reveals nothing about the scan, which is the one thing the
+    reader opened it to judge. The thumbnail stays the default, because the list
+    draws one per row and must not ship forty originals to do it.
+
+    Neither order widens what may be served. `media_type` on the record was sniffed
+    from the bytes at upload, not taken from the client, and both branches end at the
+    same allowlist check below.
     """
     record = await files_service.get(file_id)
     if record is None:
@@ -282,13 +292,25 @@ async def preview(file_id: str, request: Request) -> Any:
 
     store = files_service.blob_store()
 
-    if record.preview_sha256 and store.exists(record.preview_sha256):
-        digest = record.preview_sha256
+    thumbnail = (
+        record.preview_sha256
+        if record.preview_sha256 and store.exists(record.preview_sha256)
+        else None
+    )
+    full = (
+        record.sha256
+        if files_service.is_inline_renderable(record.media_type) and store.exists(record.sha256)
+        else None
+    )
+
+    if original and full is not None:
+        digest, media_type = full, record.media_type
+    elif thumbnail is not None:
+        digest = thumbnail
         head = (store.read(digest) or b"")[:512]
         media_type = files_service.sniff_media_type(head)
-    elif files_service.is_inline_renderable(record.media_type) and store.exists(record.sha256):
-        digest = record.sha256
-        media_type = record.media_type
+    elif full is not None:
+        digest, media_type = full, record.media_type
     else:
         raise HTTPException(
             status_code=404,

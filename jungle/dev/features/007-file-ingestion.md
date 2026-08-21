@@ -302,6 +302,13 @@ a five-type allowlist.
 
 Everything not on the inline allowlist keeps `Content-Disposition: attachment`.
 
+**Extended by spec 011 (2026-08-21).** Rendering the preview is not the same as being
+able to read it: a 420px-tall preview of an A4 scan is legible to nobody. 011 adds a
+magnifying lens over images and the browser viewer's own zoom over PDFs, plus a
+gallery over image files. It also closes a gap between this section and the code —
+"the blob itself is what the detail pane renders" was the intent, but the pane called
+`/preview`, which prefers the client's thumbnail; it now asks for `?original=1`.
+
 ### 7.7 — Graph integration
 
 - `graph.py`: node kind `file`, edges `chunk --derived_from--> file` and

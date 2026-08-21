@@ -434,3 +434,125 @@ class TestPreviewHeaders:
         assert response.status_code == 200
         # An image needs no viewer, so nothing here has to be relaxed for it.
         assert "sandbox" in response.headers["content-security-policy"]
+
+
+class TestPreviewOriginal:
+    """`?original=1`: which of the two stored blobs the route hands back (spec 011).
+
+    A file can have both a client-supplied thumbnail and inline-renderable bytes of
+    its own. The list wants the thumbnail; the magnifier and the gallery want the
+    original, because magnifying a 240px thumbnail magnifies its blur and tells the
+    reader nothing about the scan they are trying to judge.
+    """
+
+    @pytest.fixture
+    def stored_pair(self, monkeypatch, tmp_path):
+        """A PNG original with a *different* PNG stored as its thumbnail."""
+        from brownbear.blobs import BlobStore
+
+        store = BlobStore(tmp_path / "blobs")
+        monkeypatch.setattr(files_service, "blob_store", lambda: store)
+
+        original = PNG + b"original"
+        thumbnail = PNG + b"thumb"
+        written = store.write(iter([original]), max_bytes=1_000_000, expected_sha256=None)
+        thumb = store.write(iter([thumbnail]), max_bytes=1_000_000, expected_sha256=None)
+
+        record = type(
+            "Row",
+            (),
+            {
+                "id": "f_" + written.sha256[:32],
+                "sha256": written.sha256,
+                "filename": "scan.png",
+                "media_type": "image/png",
+                "size_bytes": written.size_bytes,
+                "preview_sha256": thumb.sha256,
+            },
+        )()
+        monkeypatch.setattr(files_service, "_get_sync", lambda i: record)
+        return record, original, thumbnail
+
+    def test_defaults_to_the_thumbnail(self, client, stored_pair):
+        record, _original, thumbnail = stored_pair
+
+        response = client.get(f"/ext/files/{record.id}/preview")
+
+        assert response.status_code == 200
+        assert response.content == thumbnail
+
+    def test_original_1_returns_the_file_itself(self, client, stored_pair):
+        record, original, _thumbnail = stored_pair
+
+        response = client.get(f"/ext/files/{record.id}/preview?original=1")
+
+        assert response.status_code == 200
+        assert response.content == original
+        # Same headers either way: the reversal picks a blob, it does not relax a
+        # policy. An image needs no viewer, so it keeps the sandbox.
+        assert "sandbox" in response.headers["content-security-policy"]
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    def test_original_falls_back_to_the_thumbnail(self, client, monkeypatch, tmp_path):
+        """A .docx has no inline-renderable bytes of its own, only a thumbnail.
+
+        Asking for the original must not 404 the preview away — the caller gets the
+        only thing that can be rendered, which is what it was already getting.
+        """
+        from brownbear.blobs import BlobStore
+
+        store = BlobStore(tmp_path / "blobs")
+        monkeypatch.setattr(files_service, "blob_store", lambda: store)
+
+        thumbnail = PNG + b"thumb"
+        docx = b"PK\x03\x04" + b"\x00" * 32
+        written = store.write(iter([docx]), max_bytes=1_000_000, expected_sha256=None)
+        thumb = store.write(iter([thumbnail]), max_bytes=1_000_000, expected_sha256=None)
+        record = type(
+            "Row",
+            (),
+            {
+                "id": "f_" + written.sha256[:32],
+                "sha256": written.sha256,
+                "filename": "report.docx",
+                "media_type": (
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ),
+                "size_bytes": written.size_bytes,
+                "preview_sha256": thumb.sha256,
+            },
+        )()
+        monkeypatch.setattr(files_service, "_get_sync", lambda i: record)
+
+        response = client.get(f"/ext/files/{record.id}/preview?original=1")
+
+        assert response.status_code == 200
+        assert response.content == thumbnail
+
+    def test_original_never_serves_a_type_off_the_allowlist(self, client, monkeypatch, tmp_path):
+        """An SVG is an image the browser will run script from, and has no thumbnail
+        here. `?original=1` must not become the way it gets served inline."""
+        from brownbear.blobs import BlobStore
+
+        store = BlobStore(tmp_path / "blobs")
+        monkeypatch.setattr(files_service, "blob_store", lambda: store)
+
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>'
+        written = store.write(iter([svg]), max_bytes=1_000_000, expected_sha256=None)
+        record = type(
+            "Row",
+            (),
+            {
+                "id": "f_" + written.sha256[:32],
+                "sha256": written.sha256,
+                "filename": "logo.svg",
+                "media_type": "image/svg+xml",
+                "size_bytes": written.size_bytes,
+                "preview_sha256": None,
+            },
+        )()
+        monkeypatch.setattr(files_service, "_get_sync", lambda i: record)
+
+        response = client.get(f"/ext/files/{record.id}/preview?original=1")
+
+        assert response.status_code == 404

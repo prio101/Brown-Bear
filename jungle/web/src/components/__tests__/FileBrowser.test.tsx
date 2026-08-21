@@ -7,12 +7,15 @@ import { FileBrowser } from "@/components/FileBrowser";
 import type { FileRecord } from "@/lib/api/schemas";
 
 /**
- * Preview selection by media type (spec 007 §7.6).
+ * Preview selection by media type (spec 007 §7.6), and what each type may be
+ * zoomed with (spec 011).
  *
  * The point of these is that the browser does the rendering and this component
  * only has to pick the right element. Getting that wrong is silent — a PDF in an
  * <img> shows a broken-image icon, and an SVG in an <img> would render script from
- * this origin — so each branch is asserted rather than eyeballed.
+ * this origin — so each branch is asserted rather than eyeballed. The same applies
+ * to the zoom: a lens offered over a PDF would track the pointer and magnify a
+ * region the reader had scrolled away from.
  */
 
 function file(overrides: Partial<FileRecord> = {}): FileRecord {
@@ -52,7 +55,20 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
+
+/** The lens maps the pointer onto the image's box, and this DOM measures every box
+ *  as 0×0 — where the component correctly declines to place a lens at all. */
+function measurePreviewsAs(width: number, height: number) {
+  const rect = { left: 0, top: 0, right: width, bottom: height, width, height };
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    ...rect,
+    x: 0,
+    y: 0,
+    toJSON: () => rect,
+  } as DOMRect);
+}
 
 describe("preview by media type", () => {
   it("renders a PDF in an iframe with no sandbox attribute", () => {
@@ -65,7 +81,9 @@ describe("preview by media type", () => {
     const frame = document.querySelector("iframe");
     expect(frame).not.toBeNull();
     expect(frame!.hasAttribute("sandbox")).toBe(false);
-    expect(frame!.getAttribute("src")).toBe("/ext/files/f_abc/preview");
+    // ?original=1: the detail pane renders the blob itself (007 §7.6), and a PDF
+    // whose client attached a PNG thumbnail must not frame the thumbnail.
+    expect(frame!.getAttribute("src")).toBe("/ext/files/f_abc/preview?original=1");
   });
 
   it("renders an image in an img", () => {
@@ -73,7 +91,8 @@ describe("preview by media type", () => {
 
     const image = document.querySelector("img");
     expect(image).not.toBeNull();
-    expect(image!.getAttribute("src")).toBe("/ext/files/f_abc/preview");
+    // Full resolution, not the thumbnail: this one gets magnified (spec 011).
+    expect(image!.getAttribute("src")).toBe("/ext/files/f_abc/preview?original=1");
     expect(document.querySelector("iframe")).toBeNull();
   });
 
@@ -161,5 +180,118 @@ describe("selection", () => {
   it("explains itself when there is nothing stored", () => {
     render(<FileBrowser initial={[]} />);
     expect(screen.getByText(/POST \/ext\/files/)).toBeTruthy();
+  });
+});
+
+
+describe("zoom, per type (spec 011)", () => {
+  beforeEach(() => measurePreviewsAs(400, 300));
+
+  it("gives an image a lens under the pointer", () => {
+    render(<FileBrowser initial={[file({ media_type: "image/png", filename: "a.png", inline_renderable: true })]} />);
+    const image = screen.getByAltText("Preview of a.png");
+
+    fireEvent.mouseMove(image.parentElement!, { clientX: 20, clientY: 20 });
+
+    expect(screen.getByTestId("zoom-lens")).toBeTruthy();
+    expect(screen.getByLabelText("Stronger lens")).toBeTruthy();
+  });
+
+  it("gives a PDF the viewer's own zoom and no lens", () => {
+    render(<FileBrowser initial={[file({ media_type: "application/pdf", filename: "a.pdf", inline_renderable: true })]} />);
+
+    expect(screen.getByText("fit")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Zoom in"));
+
+    // The fragment drives the browser's viewer, and follows the query string.
+    expect(document.querySelector("iframe")!.getAttribute("src")).toBe(
+      "/ext/files/f_abc/preview?original=1#zoom=125",
+    );
+    expect(screen.queryByTestId("zoom-lens")).toBeNull();
+  });
+
+  it("steps the lens up and down without leaving the scale", () => {
+    render(<FileBrowser initial={[file({ media_type: "image/png", filename: "a.png", inline_renderable: true })]} />);
+    const image = screen.getByAltText("Preview of a.png");
+    fireEvent.mouseMove(image.parentElement!, { clientX: 20, clientY: 20 });
+    expect(screen.getByTestId("zoom-lens").textContent).toBe("2×");
+
+    fireEvent.click(screen.getByLabelText("Stronger lens"));
+    fireEvent.mouseMove(image.parentElement!, { clientX: 20, clientY: 20 });
+    expect(screen.getByTestId("zoom-lens").textContent).toBe("3×");
+
+    fireEvent.click(screen.getByLabelText("Weaker lens"));
+    fireEvent.mouseMove(image.parentElement!, { clientX: 20, clientY: 20 });
+    expect(screen.getByTestId("zoom-lens").textContent).toBe("2×");
+  });
+
+  it("says nothing to magnify when the bytes are gone", () => {
+    // A pruned blob with no thumbnail has no pixels at all. A magnifier over a
+    // broken image is worse than the placard that explains it.
+    render(
+      <FileBrowser
+        initial={[file({ media_type: "image/png", inline_renderable: true, blob_present: false })]}
+      />,
+    );
+
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText(/stored bytes are gone/)).toBeTruthy();
+  });
+});
+
+describe("the gallery (spec 011)", () => {
+  const images = [
+    file({ file_id: "f_one", filename: "one.png", media_type: "image/png", inline_renderable: true }),
+    file({ file_id: "f_two", filename: "two.jpg", media_type: "image/jpeg", inline_renderable: true }),
+  ];
+
+  it("opens on a click on the preview", () => {
+    render(<FileBrowser initial={images} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open one.png in the gallery" }));
+
+    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Image gallery: one.png");
+  });
+
+  it("holds every image in the list, so the arrows have somewhere to go", () => {
+    render(<FileBrowser initial={images} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open one.png in the gallery" }));
+
+    expect(screen.getByText("1 of 2")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    expect(screen.getByText("2 of 2")).toBeTruthy();
+  });
+
+  it("leaves the detail pane on whichever image the reader stopped at", () => {
+    // The extraction pane behind the overlay is the point of the page; coming out
+    // of the gallery onto a different file's text would be a quiet mismatch.
+    render(<FileBrowser initial={images} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open one.png in the gallery" }));
+    fireEvent.keyDown(document, { key: "ArrowRight" });
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(fetch).toHaveBeenCalledWith("/ext/files/f_two", expect.anything());
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("excludes a PDF, and an SVG, from a gallery of images", () => {
+    render(
+      <FileBrowser
+        initial={[
+          file({ file_id: "f_pdf", filename: "a.pdf", media_type: "application/pdf", inline_renderable: true }),
+          file({ file_id: "f_svg", filename: "logo.svg", media_type: "image/svg+xml", inline_renderable: false }),
+        ]}
+      />,
+    );
+
+    // Nothing to open: the PDF is not an image, and the SVG is not renderable here.
+    expect(screen.queryByRole("button", { name: /in the gallery/ })).toBeNull();
+  });
+
+  it("magnifies a non-image's thumbnail but offers no gallery for it", () => {
+    render(<FileBrowser initial={[file({ media_type: "application/zip", filename: "a.zip", has_preview: true })]} />);
+
+    expect(document.querySelector("img")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /in the gallery/ })).toBeNull();
   });
 });

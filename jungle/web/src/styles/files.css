@@ -1,0 +1,219 @@
+/* Preview zoom and the image gallery (spec 011).
+ *
+ * Two rules here carry decisions rather than looks:
+ *
+ * - `.bb-zoom-img` is sized to its own pixels (`width: auto`) rather than stretched
+ *   to the pane. With `object-fit: contain` the element box is wider than the image
+ *   drawn inside it, and the lens — which maps the pointer onto the element — would
+ *   magnify a region offset from the cursor.
+ * - The lens has no transition. It tracks the pointer, and a lens that eases into
+ *   position lags behind the thing it is meant to be pointing at.
+ */
+
+/* --- magnifier ----------------------------------------------------------- */
+
+.bb-preview-stack {
+  display: grid;
+  gap: var(--bb-space-2);
+  justify-items: start;
+}
+
+.bb-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--bb-space-2);
+  flex-wrap: wrap;
+}
+
+.bb-preview-step {
+  min-width: var(--bb-touch-target);
+  min-height: var(--bb-touch-target);
+  display: inline-grid;
+  place-items: center;
+  padding: 0 var(--bb-space-2);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bb-preview-step-wide {
+  padding: 0 var(--bb-space-4);
+}
+
+/* Fixed width so stepping the zoom does not shift the buttons either side of it. */
+.bb-preview-value {
+  min-width: 56px;
+  text-align: center;
+  color: var(--bb-on-surface-variant);
+}
+
+.bb-zoom-frame {
+  position: relative;
+  display: inline-grid;
+  overflow: hidden;
+  max-width: 100%;
+  padding: 0;
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  /* Previews sit on a fixed neutral surface rather than a themed one: a screenshot
+     with a white background on a white panel has no visible edge. */
+  background: var(--bb-surface-container-low);
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.bb-zoom-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 420px;
+  /* No object-fit: the element must be the image, not a box containing it. */
+}
+
+.bb-zoom-lens {
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--bb-radius-full);
+  border: 2px solid var(--bb-primary);
+  box-shadow: var(--bb-elevation-3);
+  background-color: var(--bb-surface-container-lowest);
+  background-repeat: no-repeat;
+  /* Sharp edges are the point at high power: smoothing a magnified scan hides the
+     artefacts the reader is looking for. */
+  image-rendering: pixelated;
+  overflow: hidden;
+}
+
+.bb-zoom-badge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2px var(--bb-space-2);
+  text-align: center;
+  line-height: normal;
+  background: var(--bb-inverse-surface);
+  color: var(--bb-inverse-on-surface);
+}
+
+/* --- gallery lightbox ---------------------------------------------------- */
+
+.bb-lightbox {
+  position: fixed;
+  inset: 0;
+  /* Above the sticky nav, below nothing: the overlay is the whole surface while
+     it is open. */
+  z-index: 90;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: var(--bb-space-3);
+  padding: var(--bb-space-4);
+  background: color-mix(in srgb, var(--bb-scrim) 88%, transparent);
+  color: var(--bb-inverse-on-surface);
+}
+
+.bb-lightbox-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--bb-space-4);
+  flex-wrap: wrap;
+}
+
+.bb-lightbox-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bb-lightbox-title > span {
+  overflow-wrap: anywhere;
+}
+
+.bb-lightbox-count {
+  color: var(--bb-inverse-on-surface);
+  opacity: var(--bb-state-disabled-container);
+}
+
+/* The bar's controls sit on the scrim, so they take its foreground rather than the
+   page's. */
+.bb-lightbox .bb-preview-step,
+.bb-lightbox .bb-preview-value {
+  color: var(--bb-inverse-on-surface);
+  border-color: var(--bb-inverse-on-surface);
+}
+
+.bb-lightbox .bb-preview-value {
+  border: none;
+}
+
+.bb-lightbox-stage {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--bb-space-2);
+  overflow: hidden;
+}
+
+.bb-lightbox-img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  /* Transform origin at the centre so a zoom grows around what is in the middle,
+     which is where the reader put it. */
+  transform-origin: center center;
+  user-select: none;
+}
+
+.bb-lightbox-arrow {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--bb-touch-target);
+  min-height: var(--bb-touch-target);
+  border: 1px solid var(--bb-inverse-on-surface);
+  border-radius: var(--bb-radius-full);
+  background: transparent;
+  color: var(--bb-inverse-on-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.bb-lightbox-strip {
+  display: flex;
+  gap: var(--bb-space-2);
+  overflow-x: auto;
+  padding-bottom: var(--bb-space-1);
+}
+
+.bb-lightbox-thumb {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--bb-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.bb-lightbox-thumb[data-active="true"] {
+  border-color: var(--bb-primary);
+}
+
+.bb-lightbox-thumb img {
+  display: block;
+  width: 72px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--bb-radius-sm);
+}
+
+.bb-lightbox-hint {
+  margin: 0;
+  color: var(--bb-inverse-on-surface);
+  opacity: var(--bb-state-disabled-container);
+}

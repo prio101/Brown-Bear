@@ -293,6 +293,26 @@ CONTRACT: tuple[Endpoint, ...] = (
         "returns its nearest other memories as weighted `similar_to` edges. Takes "
         "`?id=<kind>:<value>`.",
     ),
+    # --- prompt palace (spec 012) --------------------------------------------
+    Endpoint(
+        "GET", "/api/prompts", Reach.AUTHENTICATED, "Prompt Palace",
+        "Stored prompts, newest first among those scanned, with the machine each "
+        "client claimed. Metadata only — the answers are one request away. Reports "
+        "`total`, `scanned` and `matched` separately, because Chroma returns "
+        "documents in no order and 'newest' can only mean newest within what was "
+        "read.",
+    ),
+    Endpoint(
+        "GET", "/api/prompts/{exchange_id}", Reach.AUTHENTICATED, "Prompt Palace",
+        "One exchange with the whole answer, which the listing omits.",
+    ),
+    Endpoint(
+        "GET", "/api/prompts/{exchange_id}/related", Reach.AUTHENTICATED, "Prompt Palace",
+        "What one prompt sits near, as two separate lists: prior prompts (an answer "
+        "the cache might have served, scored against the cutoff) and knowledge "
+        "chunks (context a retrieval lookup would have injected). A non-cosine "
+        "collection scores `null` — 'cannot be scored', never 0.",
+    ),
     Endpoint(
         "GET", "/api/logs/recent", Reach.AUTHENTICATED, "Memory graph",
         "The most recent query and token log rows as one response — the same rows "
@@ -377,6 +397,7 @@ GROUPS: tuple[str, ...] = (
     "Context gateway",
     "Agent configuration",
     "Memory graph",
+    "Prompt Palace",
     "Tokens",
     "Monitoring",
     "Health",

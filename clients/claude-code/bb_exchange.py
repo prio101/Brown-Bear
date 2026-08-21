@@ -11,6 +11,8 @@ Configuration (environment) — as bb_context.py, plus:
   BB_STORE_MIN_CHARS  skip answers shorter than this (default 200). "Done." is
                       noise in a cache; its usage is still reported.
   BB_NO_STORE         1 = report usage only, never store the exchange.
+  BB_MACHINE          name to attribute this machine's prompts to in the Prompt
+                      Palace (default: this host's name).
 
 Transcript parsing is defensive: field names are checked rather than assumed.
 Run once with BB_HOOK_DEBUG=1 and read $TMPDIR/bb-hook-input.jsonl to see the
@@ -20,6 +22,7 @@ real payload if nothing is landing.
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import sys
 import urllib.error
@@ -34,6 +37,30 @@ USER_AGENT = "brown-bear-client/1.0"
 
 TIMEOUT_DEFAULT = 10.0
 MIN_CHARS_DEFAULT = 200
+
+
+def machine_name() -> str:
+    """This box's name, for attributing the exchange (spec 012).
+
+    A memory shared between machines is much less useful if you cannot tell which
+    machine asked. `os.uname()` is what bb_file.py uses for `extracted_by`, but it
+    does not exist on Windows, and this hook must never raise inside a finished
+    turn — so `socket.gethostname()` is the fallback. Sent as a claim: the edge
+    authenticates one shared secret for every machine and cannot check it.
+
+    BB_MACHINE overrides it, for a box whose hostname is meaningless (a container
+    id, or a laptop called `localhost`).
+    """
+    override = (os.environ.get("BB_MACHINE") or "").strip()
+    if override:
+        return override[:128]
+    try:
+        return (os.uname().nodename or socket.gethostname())[:128]
+    except (AttributeError, OSError):
+        try:
+            return socket.gethostname()[:128]
+        except OSError:
+            return ""
 
 
 def debug_dump(raw: str) -> None:
@@ -229,6 +256,11 @@ def main() -> int:
         "request_id": f"cc-{digest}",
         "store": store,
     }
+
+    # Omitted rather than sent empty when the name cannot be determined: the
+    # server records "not recorded", which is true, instead of an empty claim.
+    if name := machine_name():
+        body["machine"] = name
 
     try:
         timeout = float(os.environ.get("BB_TIMEOUT") or TIMEOUT_DEFAULT)

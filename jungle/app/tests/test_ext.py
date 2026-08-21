@@ -226,6 +226,46 @@ class TestExchange:
         assert stored["documents"] == ["an answer"]
         assert stored["metadatas"][0]["prompt"] == "a stable question"
 
+    def test_records_the_machine_a_client_claims(
+        self, client, fake_collections, fake_embed, captured_upserts
+    ):
+        """Spec 012. Unverifiable — the edge authenticates one shared secret for
+        every machine — so this is stored as a claim and shown as one."""
+        client.post(
+            "/ext/exchange",
+            json={
+                "prompt": "asked from a named box",
+                "response": "an answer",
+                "project": "repo",
+                "model": "m",
+                "machine": "mac-studio",
+            },
+        )
+        assert captured_upserts[0]["metadatas"][0]["machine"] == "mac-studio"
+
+    def test_a_client_that_sends_no_machine_attributes_it_to_nobody(
+        self, client, fake_collections, fake_embed, captured_upserts
+    ):
+        """Absent, not empty and not the server's own hostname: "not recorded" and
+        "reported as blank" are different facts, and the receiving server is never
+        the answer to where a prompt ran."""
+        client.post(
+            "/ext/exchange",
+            json={"prompt": "asked from an older hook", "response": "a", "model": "m"},
+        )
+        assert "machine" not in captured_upserts[0]["metadatas"][0]
+
+    def test_an_overlong_machine_name_is_capped_not_rejected(
+        self, client, fake_collections, fake_embed
+    ):
+        """A hook sending junk must not cost the exchange: the answer is worth more
+        than the attribution."""
+        response = client.post(
+            "/ext/exchange",
+            json={"prompt": "q", "response": "a", "model": "m", "machine": "n" * 400},
+        )
+        assert response.status_code == 422
+
     def test_volatile_prompt_is_stored_but_flagged(
         self, client, fake_collections, fake_embed, captured_upserts
     ):

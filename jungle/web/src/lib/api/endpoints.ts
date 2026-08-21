@@ -23,6 +23,7 @@ import {
   GraphSchema,
   HealthSchema,
   InfoSchema,
+  PromptListSchema,
   RecentLogsSchema,
   SavingsSchema,
   SettingsSchema,
@@ -43,6 +44,7 @@ import {
   type Graph,
   type Health,
   type Info,
+  type PromptList,
   type RecentLogs,
   type Savings,
   type Settings,
@@ -98,6 +100,22 @@ export const getGraph = (): Promise<ApiResult<Graph>> =>
 
 export const getRecentLogs = (limit?: number): Promise<ApiResult<RecentLogs>> =>
   get("/api/logs/recent", RecentLogsSchema, { params: { limit } });
+
+/** Stored prompts (spec 012). Metadata only: the answers are fetched one at a
+ * time from the browser, because a page of forty full model responses is
+ * megabytes of payload to render a list of questions.
+ *
+ * The gateway timeout applies — this reads Chroma, not PostgreSQL. */
+export const getPrompts = (
+  params: {
+    limit?: number;
+    offset?: number;
+    project?: string;
+    model?: string;
+    machine?: string;
+  } = {},
+): Promise<ApiResult<PromptList>> =>
+  get("/api/prompts", PromptListSchema, { params, timeoutMs: GATEWAY_TIMEOUT_MS });
 
 /** Ingested files (spec 007). The list deliberately omits extracted text — a
  * corpus of extractions would be megabytes nobody reads on a list view. */

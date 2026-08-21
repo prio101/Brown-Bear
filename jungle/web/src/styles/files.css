@@ -217,3 +217,104 @@
   color: var(--bb-inverse-on-surface);
   opacity: var(--bb-state-disabled-container);
 }
+
+/* --- prompt palace (spec 012) -------------------------------------------- */
+
+/* A score is never shown without the cutoff it is being judged against, so the
+   two states are visually distinct *and* labelled: filled glyph at or above the
+   cutoff, hollow below, and the number always present. Colour alone would fail
+   DESIGN-GUIDE Part 3 rule 5. */
+.bb-score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bb-space-1);
+  padding: 2px var(--bb-space-2);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-full);
+  font-variant-numeric: tabular-nums;
+  color: var(--bb-on-surface-variant);
+}
+
+.bb-score[data-above="true"] {
+  border-color: var(--bb-primary);
+  color: var(--bb-primary);
+}
+
+/* "cannot be scored" is a state, not a failure: a non-cosine collection cannot be
+   compared to the cutoff, and the row still belongs on the page. */
+.bb-score-unscored {
+  border-style: dashed;
+}
+
+.bb-prompt-machine {
+  overflow-wrap: anywhere;
+}
+
+/* Not an error colour: an unattributed prompt is normal for anything stored before
+   the field existed. It is dimmed and italic, not warned about. */
+.bb-prompt-unattributed {
+  font-style: italic;
+  opacity: var(--bb-state-disabled-container);
+}
+
+.bb-prompt-error {
+  color: var(--bb-error);
+}
+
+.bb-prompt-tabs {
+  display: flex;
+  gap: var(--bb-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--bb-space-2);
+}
+
+.bb-prompt-tabs > button[data-active="true"] {
+  border-color: var(--bb-primary);
+  background: var(--bb-surface-container);
+}
+
+.bb-prompt-related {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--bb-space-2);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.bb-prompt-related-row {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: var(--bb-space-1);
+  padding: var(--bb-space-3);
+  border: 1px solid var(--bb-outline-variant);
+  border-radius: var(--bb-radius-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* A chunk is not a control: it navigates nowhere, so it must not look clickable. */
+.bb-prompt-chunk {
+  cursor: default;
+}
+
+.bb-prompt-related-head {
+  display: flex;
+  align-items: center;
+  gap: var(--bb-space-2);
+  flex-wrap: wrap;
+}
+
+/* A retrieved passage is quoted, never formatted like an answer — the visual
+   distinction is the guardrail (DESIGN-GUIDE Part 1 §4), not decoration. */
+.bb-prompt-passage {
+  margin: 0;
+  padding-left: var(--bb-space-3);
+  border-left: 3px solid var(--bb-outline);
+  color: var(--bb-on-surface-variant);
+  overflow-wrap: anywhere;
+}

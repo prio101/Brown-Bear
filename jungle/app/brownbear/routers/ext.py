@@ -95,6 +95,12 @@ class ExchangeIn(_Scoped):
     cost_usd: Decimal | None = None
     stale_after: str | None = None
     store: bool = True
+    #: Who ran it — a hostname, sent by the client hook (spec 012). Optional, and
+    #: unverifiable: the edge authenticates one shared secret for every machine, so
+    #: this is the same kind of claim as a file's `extracted_by`. A client that
+    #: sends nothing leaves the exchange attributed to nobody rather than to the
+    #: server that received it.
+    machine: Annotated[str | None, Field(max_length=128)] = None
 
 
 async def _collections() -> gateway.Collections:
@@ -267,6 +273,7 @@ async def exchange(payload: ExchangeIn) -> dict[str, Any]:
                 project=payload.project,
                 model=payload.model,
                 stale_after=payload.stale_after,
+                machine=payload.machine,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("failed to store exchange")

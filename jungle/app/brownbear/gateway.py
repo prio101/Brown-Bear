@@ -454,11 +454,19 @@ async def store_exchange(
     project: str,
     model: str,
     stale_after: str | None = None,
+    machine: str | None = None,
 ) -> dict[str, Any]:
     """Store a prompt/answer pair in the conversations collection.
 
     The *prompt* is embedded, not the answer: a later lookup matches on what was
     asked. The answer rides along as the stored document.
+
+    `machine` is who says they ran it (spec 012). Recorded, never verified — the
+    edge authenticates one shared secret for every machine, so this is a claim in
+    exactly the way a file's `extracted_by` is, and every surface that shows it has
+    to say so. Absent for anything stored before the field existed, which is why it
+    is omitted from the metadata rather than written as an empty string: "not
+    recorded" and "reported as blank" are different facts.
     """
     settings = get_settings()
     # Cached (BB-201), and this is the highest-value hit in the system: the client
@@ -487,6 +495,7 @@ async def store_exchange(
                 "cacheable": cacheable,
                 "embedding_model": settings.embedding_model,
                 **({"stale_after": expiry} if expiry else {}),
+                **({"machine": machine[:128]} if machine else {}),
             }
         ],
     )

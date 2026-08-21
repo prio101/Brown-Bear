@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
         metrics,
         monitoring,
         ollama_proxy,
+        prompts as prompts_router,
         tokens,
     )
     from brownbear.routers import settings as settings_router
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     # memory is a few dozen connected documents and is served as a graph; logs are
     # tens of thousands of ordered rows and are streamed.
     app.include_router(graph.router)
+    app.include_router(prompts_router.router)
     app.include_router(logs.router)
     # Spec 007. Under /ext/, so the edge publishes it with the same shared secret
     # as the rest of the gateway and needs no new nginx location.

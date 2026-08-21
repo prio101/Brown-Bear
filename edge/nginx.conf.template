@@ -213,7 +213,7 @@ server {
     # pages, not API routes — the data they render comes from /api/graph and
     # /api/logs, which are published separately above. `agents` is spec 008, and
     # reads /ext/agents, which the /ext/ location above already publishes.
-    location ~ ^/(tokens|cache|collections|settings|graph|logs|files|agents)$ {
+    location ~ ^/(tokens|cache|collections|settings|graph|logs|files|agents|prompts)$ {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
@@ -289,6 +289,22 @@ server {
         include /etc/nginx/proxy_common.conf;
         # Expanding a node runs a nearest-neighbour query against Chroma, which is
         # a vector search rather than a row lookup.
+        include /etc/nginx/proxy_timeouts_long.conf;
+    }
+
+    # ---- authenticated: prompt palace (spec 012) --------------------------
+    # Three paths, one regex: the listing, one exchange, and its neighbours. The
+    # id is matched as `[^/]+` rather than pinned to `x_<hex>` here — the app
+    # pins the format and answers 422 on a malformed one, which is the layer that
+    # can say why. GET only; nothing on this page writes.
+    location ~ ^/api/prompts(/[^/]+(/related)?)?$ {
+        error_page 401 = @unauthorized;
+        if ($bb_auth = 0) { return 401; }
+        limit_except GET { deny all; }
+        proxy_pass http://$bb_app:8080$uri$is_args$args;
+        include /etc/nginx/proxy_common.conf;
+        # Expanding a prompt runs two nearest-neighbour queries against Chroma —
+        # one per collection — which is a vector search, not a row lookup.
         include /etc/nginx/proxy_timeouts_long.conf;
     }
 

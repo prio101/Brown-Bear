@@ -178,6 +178,7 @@ async def get_documents(
     where: dict[str, Any] | None = None,
     ids: list[str] | None = None,
     with_embeddings: bool = False,
+    with_documents: bool = True,
 ) -> list[dict[str, Any]]:
     """Documents by id or filter, without a query vector.
 
@@ -188,11 +189,18 @@ async def get_documents(
     Embeddings are excluded by default and cost real bandwidth when included: 768
     floats per document. Only the similarity step asks for them, and only for the
     one node it is expanding.
+
+    `with_documents=False` drops the stored text and keeps the metadata, for a
+    caller that is enumerating rather than reading. A conversation's document is the
+    whole model answer, so scanning a few hundred of them to list what is stored
+    would transfer megabytes to render prompts that live in the metadata anyway
+    (spec 012).
     """
+    include = (["documents"] if with_documents else []) + ["metadatas"]
     body: dict[str, Any] = {
         "limit": max(1, limit),
         "offset": max(0, offset),
-        "include": ["documents", "metadatas"] + (["embeddings"] if with_embeddings else []),
+        "include": include + (["embeddings"] if with_embeddings else []),
     }
     if where:
         body["where"] = where

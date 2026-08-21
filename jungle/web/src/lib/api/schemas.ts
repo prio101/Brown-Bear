@@ -519,3 +519,85 @@ export const SavingsSchema = z.object({
 });
 
 export type Savings = z.infer<typeof SavingsSchema>;
+
+/* --- prompt palace (spec 012) --------------------------------------------- */
+
+/** One stored exchange.
+ *
+ * Everything here is *reported*: a remote client posts the finished exchange to
+ * `/ext/exchange`, and the prompt, the answer and `machine` are all its claims.
+ * `machine` is null for anything stored before the field existed, or by a client
+ * that does not send it — null means "not recorded", which is not the same as
+ * "ran here".
+ */
+export const PromptSchema = z.object({
+  id: z.string(),
+  prompt: z.string(),
+  project: z.string().nullable(),
+  model: z.string().nullable(),
+  machine: z.string().nullable(),
+  created_at: z.string().nullable(),
+  /** False is why a hit gets refused despite a high score, so it travels with
+   * the row rather than only appearing in a detail view. */
+  cacheable: z.boolean(),
+  stale_after: z.string().nullable().optional(),
+  embedding_model: z.string().nullable().optional(),
+  /** Listing rows carry neither: the answers are fetched one at a time. */
+  response_preview: z.string().nullable().optional(),
+  response: z.string().nullable().optional(),
+  response_chars: z.number().optional(),
+  /** Only on a related row. Null means the collection is not in cosine space and
+   * the similarity cannot be scored — never render it as 0. */
+  score: z.number().nullable().optional(),
+  would_hit: z.boolean().optional(),
+});
+
+export const PromptListSchema = z.object({
+  prompts: z.array(PromptSchema),
+  /** Three counts that answer different questions and must not be conflated:
+   * what the collection holds, what this read looked at, what survived filters. */
+  total: z.number(),
+  scanned: z.number(),
+  matched: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+  /** True means Chroma returned an arbitrary window, so the newest exchange may
+   * not be on this page at all. */
+  truncated: z.boolean(),
+  machines: z.array(z.string()),
+  projects: z.array(z.string()),
+  models: z.array(z.string()),
+  threshold: z.number(),
+  scorable: z.boolean(),
+  collection: z.string(),
+  ready: z.boolean(),
+});
+
+export const KnowledgeChunkSchema = z.object({
+  id: z.string(),
+  score: z.number().nullable(),
+  source: z.string().nullable(),
+  project: z.string().nullable(),
+  chunk_index: z.number().nullable(),
+  chunk_count: z.number().nullable(),
+  file_id: z.string().nullable(),
+  text: z.string().nullable(),
+});
+
+export const PromptRelatedSchema = z.object({
+  id: z.string(),
+  /** Prior prompts and knowledge chunks stay separate: one is an answer the cache
+   * might have served, the other is context that would have been injected. */
+  prompts: z.array(PromptSchema),
+  chunks: z.array(KnowledgeChunkSchema),
+  space: z.string().nullable(),
+  scorable: z.boolean(),
+  threshold: z.number(),
+  min_similarity: z.number(),
+  unavailable: z.string().optional(),
+});
+
+export type Prompt = z.infer<typeof PromptSchema>;
+export type PromptList = z.infer<typeof PromptListSchema>;
+export type KnowledgeChunk = z.infer<typeof KnowledgeChunkSchema>;
+export type PromptRelated = z.infer<typeof PromptRelatedSchema>;

@@ -23,6 +23,27 @@
 # nginx refuses to start rather than truncating them.
 map_hash_bucket_size 256;
 
+# Docker's embedded DNS, so upstream names are re-resolved while nginx runs.
+#
+# Without this, nginx resolves `app` and `web` once at config load and dials
+# those addresses forever. Recreating either container — which `docker compose
+# up --build` may do, and `--force-recreate` always does — hands it a new IP on
+# the compose network, and every proxied request then fails with "connect()
+# failed (111: Connection refused)" against an address nothing answers on. It
+# has happened: the two were recreated and swapped addresses, so the edge posted
+# API traffic at the dashboard's port and dashboard traffic at the API's — 502 on
+# both, until it was restarted.
+#
+# `valid=30s` caps how long a stale answer can be believed, so the recovery
+# window is half a minute rather than "until someone notices". `ipv6=off`
+# because the embedded resolver answers AAAA queries for names that have no
+# IPv6 address, and the failed lookups are pure latency.
+#
+# Re-resolution only happens where the upstream host comes from a variable,
+# which is why every location below uses `$bb_app` or `$bb_web`. A literal
+# hostname is resolved at startup no matter what this directive says.
+resolver 127.0.0.11 ipv6=off valid=30s;
+
 # Valid credential forms. Anything else, including an absent header, is 0.
 map $http_authorization $bb_auth_form {
     default                     0;
@@ -51,6 +72,19 @@ server {
 
     # Keep the origin quiet about what it is running.
     server_tokens off;
+
+    # The upstreams, held in variables so `resolver` above actually applies.
+    # Set once here rather than per location: one place to change, and no
+    # location can drift onto a literal hostname by accident.
+    #
+    # A variable host turns off two conveniences of the literal form — the
+    # location prefix is no longer substituted into the target, and the query
+    # string is no longer appended — so each proxy_pass below spells out the URI
+    # it means. `$request_uri` where the whole original URI was passed through,
+    # a literal path plus `$is_args$args` where an exact-match location pinned
+    # one path.
+    set $bb_app app;
+    set $bb_web web;
 
     # A body large enough for document ingestion, small enough that the
     # endpoint cannot be used to fill the disk.
@@ -85,7 +119,7 @@ server {
     # Reveals nothing but whether the app is up.
     location = /api/health/live {
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/api/health/live;
+        proxy_pass http://$bb_app:8080/api/health/live$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -101,14 +135,14 @@ server {
     # default deny.
     location = /design {
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/design;
+        proxy_pass http://$bb_app:8080/design$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
 
     location /design/ {
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/design/;
+        proxy_pass http://$bb_app:8080$request_uri;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -124,7 +158,7 @@ server {
         # apply — and report — its own limit. The server-wide 32m still guards
         # every other route.
         client_max_body_size 52m;
-        proxy_pass http://app:8080/ext/;
+        proxy_pass http://$bb_app:8080$request_uri;
         include /etc/nginx/proxy_common.conf;
         # Embedding a large document runs a model.
         include /etc/nginx/proxy_timeouts_long.conf;
@@ -157,7 +191,7 @@ server {
         add_header Referrer-Policy no-referrer always;
         add_header X-Frame-Options SAMEORIGIN always;
 
-        proxy_pass http://app:8080$uri$is_args$args;
+        proxy_pass http://$bb_app:8080$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -170,7 +204,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://web:3000;
+        proxy_pass http://$bb_web:3000$request_uri;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -183,7 +217,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://web:3000$uri$is_args$args;
+        proxy_pass http://$bb_web:3000$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -194,7 +228,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://web:3000;
+        proxy_pass http://$bb_web:3000$request_uri;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -207,7 +241,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/api-doc/;
+        proxy_pass http://$bb_app:8080$request_uri;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -220,7 +254,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080$uri$is_args$args;
+        proxy_pass http://$bb_app:8080$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -230,7 +264,7 @@ server {
         if ($bb_auth = 0) { return 401; }
         # Read the configuration remotely; change it only on the host.
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/api/settings;
+        proxy_pass http://$bb_app:8080/api/settings$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -239,7 +273,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080$uri$is_args$args;
+        proxy_pass http://$bb_app:8080$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -251,7 +285,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080$uri$is_args$args;
+        proxy_pass http://$bb_app:8080$uri$is_args$args;
         include /etc/nginx/proxy_common.conf;
         # Expanding a node runs a nearest-neighbour query against Chroma, which is
         # a vector search rather than a row lookup.
@@ -262,7 +296,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/api/logs/recent;
+        proxy_pass http://$bb_app:8080/api/logs/recent$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
@@ -279,7 +313,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/api/logs/stream;
+        proxy_pass http://$bb_app:8080/api/logs/stream$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts_long.conf;
     }
@@ -292,7 +326,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except POST { deny all; }
-        proxy_pass http://app:8080/ollama/api/chat;
+        proxy_pass http://$bb_app:8080/ollama/api/chat$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts_long.conf;
     }
@@ -301,7 +335,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except POST { deny all; }
-        proxy_pass http://app:8080/ollama/api/generate;
+        proxy_pass http://$bb_app:8080/ollama/api/generate$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts_long.conf;
     }
@@ -310,7 +344,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except POST { deny all; }
-        proxy_pass http://app:8080/ollama/api/embed;
+        proxy_pass http://$bb_app:8080/ollama/api/embed$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts_long.conf;
     }
@@ -319,7 +353,7 @@ server {
         error_page 401 = @unauthorized;
         if ($bb_auth = 0) { return 401; }
         limit_except GET { deny all; }
-        proxy_pass http://app:8080/ollama/api/tags;
+        proxy_pass http://$bb_app:8080/ollama/api/tags$is_args$args;
         include /etc/nginx/proxy_common.conf;
         include /etc/nginx/proxy_timeouts.conf;
     }
